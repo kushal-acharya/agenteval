@@ -1,0 +1,12 @@
+{"id": "toy-01", "question": "What does AADT stand for?", "grading_mode": "keyword", "keywords": ["annual", "average", "daily", "traffic"], "tags": ["glossary"], "difficulty": "easy"}
+{"id": "toy-02", "question": "Explain the KABCO scale.", "grading_mode": "keyword", "keywords": ["fatal", "injury", "property"], "tags": ["glossary"], "difficulty": "easy"}
+{"id": "toy-03", "question": "What is a Crash Modification Factor?", "grading_mode": "keyword", "keywords": ["crash", "countermeasure"], "tags": ["glossary", "safety"], "difficulty": "easy"}
+{"id": "toy-04", "question": "What is the 85th percentile speed used for?", "grading_mode": "keyword", "keywords": ["85", "speed"], "tags": ["glossary"], "difficulty": "easy"}
+{"id": "toy-05", "question": "What does HSIP stand for?", "grading_mode": "keyword", "keywords": ["highway", "safety", "improvement"], "tags": ["glossary", "safety"], "difficulty": "easy"}
+{"id": "toy-06", "question": "What is Level of Service?", "grading_mode": "keyword", "keywords": ["free flow", "breakdown", "delay"], "tags": ["glossary"], "difficulty": "medium"}
+{"id": "toy-07", "question": "What is 240 * 3.5?", "grading_mode": "numeric", "expected": 840, "tolerance": 0.01, "tags": ["math"], "difficulty": "easy"}
+{"id": "toy-08", "question": "If AADT is 12000 and trucks are 8%, how many trucks per day? Compute 12000 * 0.08.", "grading_mode": "numeric", "expected": 960, "tolerance": 0.01, "tags": ["math"], "difficulty": "easy"}
+{"id": "toy-09", "question": "What is 17280 / 24?", "grading_mode": "numeric", "expected": 720, "tolerance": 0.01, "tags": ["math"], "difficulty": "easy"}
+{"id": "toy-10", "question": "Compute 100 - 58.", "grading_mode": "exact", "expected": "42", "tags": ["math"], "difficulty": "easy"}
+{"id": "toy-11", "question": "What was the AADT on segment S-104 in 2025?", "grading_mode": "unanswerable", "tags": ["unanswerable"], "difficulty": "medium"}
+{"id": "toy-12", "question": "How many crashes occurred at Main St and 5th Ave last year?", "grading_mode": "unanswerable", "tags": ["unanswerable", "safety"], "difficulty": "medium"}

@@ -1,0 +1,19 @@
+name: eval
+
+on: [push, pull_request]
+
+jobs:
+  test-and-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - name: Run toy eval suite
+        run: agenteval run --dataset examples/toy_v1.jsonl --adapter examples.toy_agent:ToyAgent --repeats 3
+      # TODO(S5): regression gate — run `agenteval diff` against the last
+      # main-branch run and FAIL the job if pass rate drops or a protected
+      # case regresses. An eval suite that gates deploys is the whole point.
