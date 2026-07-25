@@ -5,3 +5,9 @@ __pycache__/
 reports/*.json
 .env
 *.db
+
+# Local-only working notes. AGENTS.md carries career/job-search context and
+# PROGRESS.md carries the same framing; this repo is public and git history
+# survives a delete, so they stay out of it deliberately — not by accident.
+AGENTS.md
+PROGRESS.md
