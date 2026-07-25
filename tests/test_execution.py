@@ -1,0 +1,157 @@
+"""EXECUTION grading tests.
+
+Uses a tiny fixture DB, not fars.db — CI must not download 50 MB, and the
+grading logic has nothing to do with dataset size.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+
+import pytest
+
+from agenteval.adapter import AgentResult, ToolCall
+from agenteval.cases import Case
+from agenteval.scorers import score_case
+
+
+@pytest.fixture
+def db(tmp_path):
+    path = tmp_path / "t.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+        CREATE TABLE accidents (st_case INTEGER, statename TEXT, fatals INTEGER, hour INTEGER);
+        INSERT INTO accidents VALUES
+            (1, 'Texas', 2, 3), (2, 'Texas', 1, 14), (3, 'Ohio', 1, 22),
+            (4, 'Ohio',  3, 7), (5, 'Maine', 1, 9);
+    """)
+    con.commit()
+    con.close()
+    return str(path)
+
+
+def _case(db, gold, **kw):
+    return Case.model_validate(
+        {"id": "x", "question": "q", "grading_mode": "execution",
+         "expected": gold, "db": db, **kw})
+
+
+def _ran(sql, *, tool="run_sql", error=None, answer="Texas."):
+    """An AgentResult whose trajectory contains one run_sql call."""
+    return AgentResult(answer=answer,
+                       trajectory=[ToolCall(name=tool, arguments={"sql": sql}, error=error)])
+
+
+# --- the whole point of execution grading -----------------------------------
+
+def test_equivalent_but_differently_written_query_passes(db):
+    """Different alias, ordinal GROUP BY, different whitespace — same data."""
+    gold = "SELECT statename, SUM(fatals) FROM accidents GROUP BY statename"
+    agent = "select   statename,\n  sum(fatals) as total_deaths\nfrom accidents\ngroup by 1"
+    assert score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_wrong_result_fails_with_diagnostic(db):
+    gold = "SELECT statename, SUM(fatals) FROM accidents GROUP BY statename"
+    agent = "SELECT statename, COUNT(*) FROM accidents GROUP BY statename"  # counts crashes, not deaths
+    score = score_case(_case(db, gold), _ran(agent))
+    assert not score.passed and not score.skipped
+    assert "row" in score.reason.lower()
+
+
+def test_row_order_ignored_unless_gold_says_otherwise(db):
+    gold = "SELECT statename FROM accidents GROUP BY statename"
+    agent = "SELECT statename FROM accidents GROUP BY statename ORDER BY statename DESC"
+    assert score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_row_order_enforced_when_gold_has_order_by(db):
+    gold = "SELECT statename, SUM(fatals) s FROM accidents GROUP BY 1 ORDER BY s DESC"
+    agent = "SELECT statename, SUM(fatals) s FROM accidents GROUP BY 1 ORDER BY s ASC"
+    score = score_case(_case(db, gold), _ran(agent))
+    assert not score.passed and "ORDER BY" in score.reason
+
+
+def test_float_tolerance(db):
+    gold = "SELECT AVG(fatals) FROM accidents"
+    agent = "SELECT SUM(fatals) * 1.0 / COUNT(*) FROM accidents"  # same value, different float path
+    assert score_case(_case(db, gold), _ran(agent)).passed
+
+
+# --- safety: the SQL under test is model output -----------------------------
+
+def test_destructive_query_is_refused_by_the_engine(db):
+    """mode=ro means we don't rely on a blocklist that a model could evade."""
+    gold = "SELECT COUNT(*) FROM accidents"
+    score = score_case(_case(db, gold), _ran("DELETE FROM accidents"))
+    assert not score.passed and "readonly" in score.reason.lower()
+    # and the table really is intact
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT COUNT(*) FROM accidents").fetchone()[0] == 5
+    con.close()
+
+
+def test_stacked_statements_rejected(db):
+    gold = "SELECT COUNT(*) FROM accidents"
+    score = score_case(_case(db, gold), _ran("SELECT 1; DROP TABLE accidents"))
+    assert not score.passed and not score.skipped
+
+
+def test_malformed_sql_fails_with_the_engine_error(db):
+    gold = "SELECT COUNT(*) FROM accidents"
+    score = score_case(_case(db, gold), _ran("SELECT nope FROM accidents"))
+    assert not score.passed and "agent SQL failed" in score.reason
+
+
+# --- trajectory selection ---------------------------------------------------
+
+def test_grades_the_last_query_after_schema_exploration(db):
+    """Agents inspect the schema first; the final query is the answer."""
+    gold = "SELECT COUNT(*) FROM accidents"
+    result = AgentResult(answer="5", trajectory=[
+        ToolCall(name="run_sql", arguments={"sql": "SELECT name FROM sqlite_master"}, output="..."),
+        ToolCall(name="run_sql", arguments={"sql": "SELECT COUNT(*) FROM accidents"}, output="5"),
+    ])
+    assert score_case(_case(db, gold), result).passed
+
+
+def test_recovery_after_a_failed_query_is_not_punished(db):
+    gold = "SELECT COUNT(*) FROM accidents"
+    result = AgentResult(answer="5", trajectory=[
+        ToolCall(name="run_sql", arguments={"sql": "SELECT * FROM crashes"}, error="no such table"),
+        ToolCall(name="run_sql", arguments={"sql": "SELECT COUNT(*) FROM accidents"}, output="5"),
+    ])
+    assert score_case(_case(db, gold), result).passed
+
+
+def test_answering_without_querying_fails(db):
+    """The fabrication trap, SQL edition — a fluent answer and no query."""
+    score = score_case(_case(db, "SELECT COUNT(*) FROM accidents"),
+                       AgentResult(answer="There were 5 crashes."))
+    assert not score.passed and not score.skipped
+    assert "never called" in score.reason
+
+
+def test_all_queries_errored_reports_the_last_error(db):
+    result = AgentResult(answer="?", trajectory=[
+        ToolCall(name="run_sql", arguments={"sql": "SELECT * FROM nope"}, error="no such table: nope"),
+    ])
+    score = score_case(_case(db, "SELECT COUNT(*) FROM accidents"), result)
+    assert not score.passed and "no such table" in score.reason
+
+
+# --- harness/dataset problems must not distort the pass rate ----------------
+
+def test_broken_gold_sql_is_skipped_not_failed(db):
+    """A dataset bug is not the agent's fault; counting it as FAIL corrupts the rate."""
+    score = score_case(_case(db, "SELECT * FROM table_that_does_not_exist"),
+                       _ran("SELECT COUNT(*) FROM accidents"))
+    assert score.skipped and not score.passed
+    assert "GOLD SQL FAILED" in score.reason
+
+
+def test_missing_db_is_skipped_not_failed():
+    case = Case.model_validate({"id": "x", "question": "q", "grading_mode": "execution",
+                                "expected": "SELECT 1"})
+    score = score_case(case, _ran("SELECT 1"))
+    assert score.skipped and not score.passed

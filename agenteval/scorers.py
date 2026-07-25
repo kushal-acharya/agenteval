@@ -1,8 +1,8 @@
 """Layered scorers — cheapest first.
 
-Deterministic scorers live here (S1). EXECUTION (S2) and JUDGE (S3) are
-routed but return skipped=True until implemented, so they never silently
-inflate or deflate the pass rate.
+Deterministic scorers live here (S1) plus EXECUTION (S2). JUDGE (S3) is
+routed but returns skipped=True until implemented, so it never silently
+inflates or deflates the pass rate.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from .adapter import AgentResult
 from .cases import Case, GradingMode
+from .execution import SQL_TOOL, SQLError, compare, last_sql, order_matters, run_query
 
 DECLINE_MARKERS = [
     "cannot", "can't", "unable to", "don't know", "do not know",
@@ -64,6 +65,53 @@ def score_unanswerable(case: Case, result: AgentResult) -> Score:
                  reason="" if declined else "agent answered instead of declining — possible fabrication")
 
 
+def score_execution(case: Case, result: AgentResult, *, tool: str = SQL_TOOL) -> Score:
+    """Grade the SQL the agent actually ran, by result set.
+
+    Failure taxonomy, kept distinct on purpose — "wrong rows" and "never
+    queried at all" are different bugs and a single FAIL would hide that:
+      - no db configured          -> skipped (harness gap, not the agent)
+      - gold SQL broken           -> skipped (dataset bug, not the agent)
+      - agent never queried       -> FAIL (answered from thin air)
+      - every query errored       -> FAIL, with the last SQLite error
+      - query ran, rows differ    -> FAIL, with the first divergence
+    """
+    if not case.db:
+        return Score(passed=False, skipped=True, scorer="execution",
+                     reason="case has no `db` — nothing to execute against")
+
+    calls = [c for c in result.trajectory if c.name == tool]
+    sql = last_sql(result.trajectory, tool)
+    if sql is None:
+        reason = (f"agent never called {tool!r} — answered without querying"
+                  if not calls
+                  else f"all {len(calls)} {tool!r} call(s) errored; last: {calls[-1].error}")
+        return Score(passed=False, scorer="execution", reason=reason)
+
+    # Gold runs first. A broken gold query is a dataset defect, and letting it
+    # count as an agent failure would quietly corrupt the pass rate — skip it
+    # loudly instead. (The runner never crashes, so we must not raise here.)
+    try:
+        gold_rows, gold_truncated = run_query(case.db, str(case.expected))
+    except SQLError as e:
+        return Score(passed=False, skipped=True, scorer="execution",
+                     reason=f"GOLD SQL FAILED — dataset bug, not the agent: {e}")
+    if gold_truncated:
+        return Score(passed=False, skipped=True, scorer="execution",
+                     reason="gold query exceeds the row cap — tighten the gold SQL")
+
+    try:
+        got_rows, got_truncated = run_query(case.db, sql)
+    except SQLError as e:
+        return Score(passed=False, scorer="execution", reason=f"agent SQL failed: {e}")
+    if got_truncated:
+        return Score(passed=False, scorer="execution",
+                     reason="agent query exceeded the row cap (missing aggregate or LIMIT?)")
+
+    ok, why = compare(gold_rows, got_rows, ordered=order_matters(str(case.expected)))
+    return Score(passed=ok, scorer="execution", reason="" if ok else why)
+
+
 def score_case(case: Case, result: AgentResult) -> Score:
     """Route a case to its scorer."""
     if result.error:
@@ -79,10 +127,7 @@ def score_case(case: Case, result: AgentResult) -> Score:
     if mode == GradingMode.UNANSWERABLE:
         return score_unanswerable(case, result)
     if mode == GradingMode.EXECUTION:
-        # TODO(S2): run gold SQL and agent SQL against the synthetic DB,
-        # compare RESULT SETS (not query strings).
-        return Score(passed=False, skipped=True, scorer="execution",
-                     reason="execution grading lands in S2")
+        return score_execution(case, result)
     if mode == GradingMode.JUDGE:
         # TODO(S3): rubric-based LLM-as-judge. Calibrate against ~30
         # hand-labeled cases and report judge-human agreement.

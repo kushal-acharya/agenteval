@@ -13,7 +13,10 @@ def render(run: RunRecord) -> str:
         f"  adapter={run.adapter}  dataset={run.dataset}  repeats={run.repeats}",
         "",
         f"  cases: {s.cases_total}   graded: {s.cases_graded}   "
-        f"skipped: {s.cases_skipped} (grading modes pending S2/S3)",
+        f"skipped: {s.cases_skipped}"
+        # Skips are never silent: judge cases (S3) and any case the harness can't
+        # grade are excluded from the rate rather than counted as failures.
+        f"{' (ungradable — see failure reasons)' if s.cases_skipped else ''}",
         f"  pass@1: {s.pass_at_1:.1%}   pass^{s.k}: {s.pass_pow_k:.1%}   "
         f"flaky: {len(s.flaky_cases)}{' ' + str(s.flaky_cases) if s.flaky_cases else ''}",
         "",

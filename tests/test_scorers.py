@@ -33,10 +33,18 @@ def test_unanswerable_requires_decline():
     assert not score_case(case, AgentResult(answer="It was 12,400 vehicles.")).passed
 
 
-def test_execution_and_judge_are_skipped_not_failed():
-    for mode in (GradingMode.EXECUTION, GradingMode.JUDGE):
-        score = score_case(_case(grading_mode=mode, expected="x"), AgentResult(answer="y"))
-        assert score.skipped and not score.passed
+def test_judge_is_skipped_not_failed():
+    """JUDGE lands in S3. Until then it must not move the pass rate either way."""
+    score = score_case(_case(grading_mode=GradingMode.JUDGE, expected="x"), AgentResult(answer="y"))
+    assert score.skipped and not score.passed
+
+
+def test_execution_without_a_db_is_skipped_not_failed():
+    """EXECUTION is implemented (S2); an unconfigured case is a harness gap, not a failure.
+    Real execution grading is covered in tests/test_execution.py."""
+    score = score_case(_case(grading_mode=GradingMode.EXECUTION, expected="SELECT 1"),
+                       AgentResult(answer="y"))
+    assert score.skipped and not score.passed
 
 
 def test_agent_error_fails():

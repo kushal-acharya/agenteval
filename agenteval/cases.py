@@ -33,6 +33,13 @@ class Case(BaseModel):
     tolerance: float = 0.0                             # for NUMERIC mode
     tags: list[str] = Field(default_factory=list)      # e.g. sql, rag, safety
     difficulty: str = "medium"                         # easy | medium | hard
+    # Which database this question is *about* (EXECUTION mode). It lives on the
+    # case, not the run, because that's what it is: "which state had the most
+    # fatal crashes" is inherently a question about fars.db. One dataset can
+    # therefore mix databases, and the adapter and the scorer read the same
+    # field — they cannot disagree about what was being queried.
+    # Path is resolved relative to the current working directory.
+    db: str | None = None
 
 
 def load_dataset(path: str | Path) -> list[Case]:

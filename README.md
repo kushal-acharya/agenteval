@@ -54,13 +54,39 @@ class MyAgent(AgentAdapter):
 
 Then: `agenteval run --dataset datasets/transit_v1.jsonl --adapter mypkg.agent:MyAgent --repeats 5`
 
+A worked example lives in [`examples/fars_sql_agent.py`](examples/fars_sql_agent.py) — a
+real Claude agent with a single `run_sql` tool over the FARS database:
+
+```bash
+pip install -e ".[dev,claude]"
+export ANTHROPIC_API_KEY=...
+python scripts/load_fars.py
+agenteval run --dataset datasets/fars_v1.jsonl \
+              --adapter examples.fars_sql_agent:FarsSQLAgent --repeats 5
+```
+
+The harness core depends on nothing but `pydantic`; the vendor SDK is an optional
+extra used only by that example. Model independence is the point of the adapter
+interface, so `pip install agenteval` must not drag in an SDK.
+
 ## Datasets
 
 - `examples/toy_v1.jsonl` — 12 self-contained cases for the demo.
+- `datasets/fars_v1.jsonl` — 9 execution cases + 1 fabrication trap over **real
+  NHTSA FARS 2023 data** (37,769 fatal crashes, 92,768 people). Build the DB
+  with `python scripts/load_fars.py`; it is generated, never committed.
 - `datasets/transit_v1.jsonl` — 25 transportation seed cases: definitional
-  (graded today), SQL cases (activate in S2 with execution-based grading),
-  countermeasure-recommendation cases with rubrics (activate in S3 with a
-  calibrated judge), and fabrication traps (`unanswerable`).
+  (graded today), SQL cases (targeting a schema that predates FARS — being
+  retired), countermeasure-recommendation cases with rubrics (activate in S3
+  with a calibrated judge), and fabrication traps (`unanswerable`).
+
+**Execution grading** compares result sets, not query strings, and grades the
+SQL the agent *actually ran* (pulled from its `run_sql` tool calls) rather than
+its prose answer — the difference between evaluating an agent and benchmarking
+a text-to-SQL completion. Row order matters only when the gold query has an
+`ORDER BY`; column aliases are ignored; floats compare within tolerance. The
+connection is opened `mode=ro`, so a destructive query is refused by SQLite
+itself rather than by a blocklist a model could talk its way around.
 
 Grading modes: `exact`, `keyword`, `numeric`, `execution` (compare SQL
 **result sets**, not query strings), `judge` (rubric + calibrated
@@ -77,7 +103,8 @@ LLM-as-judge), `unanswerable` (the agent must decline, not fabricate).
 ## Roadmap (build order)
 
 - [x] **S1** — dataset schema, adapter interface, serial runner, deterministic scorers, CLI
-- [ ] **S2** — execution-based SQL grading (result-set comparison)
+- [x] **S2** — execution-based SQL grading: runs the agent's **trajectory** SQL
+      against a read-only DB and compares result sets
 - [ ] **S3** — LLM-as-judge + calibration vs ~30 hand-labeled cases (report agreement)
 - [ ] **S4** — `agenteval diff`: newly-failing / newly-fixed / flaky / cost delta
 - [ ] **S5** — OTel tracing → self-hosted Phoenix; failure→trace links; CI regression gate
