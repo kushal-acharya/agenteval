@@ -155,6 +155,10 @@ class FarsSQLAgent(AgentAdapter):
 
         load_dotenv()  # in __init__, not at import — importing stays side-effect free
         self.model = os.environ.get("AGENTEVAL_MODEL", model)
+        # Name the *instance* after the model it will actually run. The run
+        # record keeps this, so `agenteval history` can tell three sweeps of the
+        # same adapter apart — which is the whole point of comparing models.
+        self.name = f"FarsSQLAgent({self.model})"
         self.client = anthropic.Anthropic()
         self._schema_cache: dict[str, str] = {}
 

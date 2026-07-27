@@ -81,9 +81,18 @@ def run_sql(db: Path, sql: str, limit: int = 50):
         con.close()
 
 
-def build(run_path: Path) -> dict:
+def build(run_path: Path, _cache: dict | None = None) -> dict:
     raw = json.loads(run_path.read_text())
     cases_meta = load_cases(raw.get("dataset", ""))
+    # Replaying the same SQL once per repeat is pure waste — agents converge on
+    # near-identical final queries, so this collapses ~50 executions to a handful.
+    cache: dict = {} if _cache is None else _cache
+
+    def replay(db, sql):
+        key = (str(db), sql)
+        if key not in cache:
+            cache[key] = run_sql(db, sql)
+        return cache[key]
 
     by_case: dict[str, list] = {}
     for r in raw.get("results", []):
@@ -97,7 +106,7 @@ def build(run_path: Path) -> dict:
         gold_sql = meta.get("expected") if meta.get("grading_mode") == "execution" else None
 
         gold_cols, gold_rows, gold_err = (
-            run_sql(db, gold_sql) if (db and isinstance(gold_sql, str)) else (None, None, None))
+            replay(db, gold_sql) if (db and isinstance(gold_sql, str)) else (None, None, None))
 
         results = []
         for r in reps:
@@ -114,7 +123,7 @@ def build(run_path: Path) -> dict:
                 })
             agent_sql = steps[-1]["sql"] if steps else None
             a_cols, a_rows, a_err = (
-                run_sql(db, agent_sql) if (db and agent_sql) else (None, None, None))
+                replay(db, agent_sql) if (db and agent_sql) else (None, None, None))
             results.append({
                 "pass": bool(r.get("passed")), "skipped": bool(r.get("skipped")),
                 "reason": r.get("reason", ""), "answer": r.get("answer", ""),
@@ -145,16 +154,57 @@ def build(run_path: Path) -> dict:
     }
 
 
-def main() -> None:
-    run_path = Path(sys.argv[1]) if len(sys.argv) > 1 else newest_run()
-    view = build(run_path)
-    out = REPORTS / "latest.json"
-    out.write_text(json.dumps(view, indent=2, default=str))
+def summarize(view: dict) -> dict:
+    """Headline numbers for one run — mirrors agenteval.metrics.summarize."""
+    graded = [c for c in view["cases"] if not (c["results"] and c["results"][0]["skipped"])]
+    n = len(graded) or 1
+    p1 = sum(1 for c in graded if c["results"][0]["pass"]) / n
+    pk = sum(1 for c in graded if all(r["pass"] for r in c["results"])) / n
+    flaky = [c["id"] for c in graded
+             if any(r["pass"] for r in c["results"]) and not all(r["pass"] for r in c["results"])]
+    return {"run_id": view["run_id"], "created_at": view["created_at"],
+            "adapter": view["adapter"], "dataset": Path(view["dataset"]).name,
+            "repeats": view["repeats"], "cases": len(graded),
+            "p1": round(p1, 4), "pk": round(pk, 4), "gap": round((p1 - pk) * 100, 1),
+            "flaky": len(flaky)}
 
-    n_fail = sum(1 for c in view["cases"] for r in c["results"] if not r["pass"])
-    print(f"→ {run_path.name}: {len(view['cases'])} cases × {view['repeats']} repeats, "
-          f"{n_fail} failed attempts")
-    print(f"→ wrote {out.relative_to(ROOT)}")
+
+def main() -> None:
+    explicit = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    paths = sorted(REPORTS.glob("run_*.json"), key=lambda p: p.stat().st_mtime)
+    if not paths:
+        sys.exit(f"No run files in {REPORTS}. Run `agenteval run ...` first.")
+
+    # Build every run, not just one: "keep a history" means the page can move
+    # between runs without a server round-trip, and a comparison across models
+    # is only possible when they are all in hand at once.
+    views, history, cache = [], [], {}   # one replay cache across all runs
+    for p in paths:
+        try:
+            v = build(p, cache)
+        except Exception as e:                    # one bad file must not sink the rest
+            print(f"  ! skipped {p.name}: {type(e).__name__}: {e}")
+            continue
+        views.append(v)
+        history.append(summarize(v))
+
+    active = next((i for i, v in enumerate(views)
+                   if explicit and v["run_id"] in explicit.name), len(views) - 1)
+    payload = dict(views[active])
+    payload["history"] = history
+    payload["runs"] = views
+    payload["active"] = active
+
+    out = REPORTS / "latest.json"
+    out.write_text(json.dumps(payload, indent=2, default=str))
+
+    print(f"→ {len(views)} run(s) built; showing {history[active]['run_id']}")
+    for i, h in enumerate(history):
+        mark = "→" if i == active else " "
+        print(f"  {mark} {h['created_at'][:16].replace('T',' ')}  {h['adapter'][:34]:<35}"
+              f"k={h['repeats']}  pass@1 {h['p1']:.0%}  pass^k {h['pk']:.0%}  "
+              f"gap {h['gap']:.1f}  flaky {h['flaky']}")
+    print(f"→ wrote {out.relative_to(ROOT)} ({out.stat().st_size/1024:.0f} KB)")
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         """Serves the dashboard and its data — and nothing else.

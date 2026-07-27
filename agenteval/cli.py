@@ -25,7 +25,12 @@ def _load_adapter(spec: str):
     sys.path.insert(0, os.getcwd())
     cls = getattr(importlib.import_module(module_name), class_name)
     adapter = cls()
-    adapter.name = spec
+    # Only name it after the import spec if the adapter didn't name itself. An
+    # adapter knows things the spec cannot express — which model it is running —
+    # and without that a Haiku run and an Opus run are indistinguishable in the
+    # run record, making a model comparison impossible after the fact.
+    if "name" not in vars(adapter):
+        adapter.name = spec
     return adapter
 
 

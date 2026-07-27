@@ -252,6 +252,19 @@ footer a:hover{color:var(--accent)}
   .cmp,.tax{grid-template-columns:1fr}
   .nav-links{display:none}
 }
+
+/* ---- run history ---- */
+.histtbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+.histtbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--dim);font-weight:500;padding:0 14px 8px 0;border-bottom:1px solid var(--border)}
+.histtbl td{padding:9px 14px 9px 0;border-bottom:1px solid var(--border-soft);
+  color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.histtbl tbody tr{cursor:pointer}
+.histtbl tbody tr:hover td{background:var(--surface2);color:var(--text)}
+.histtbl tr.cur td{background:var(--accent-soft);color:var(--text)}
+.histtbl tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.histtbl td.gap0{color:var(--dim)}
+.histtbl td.gapN{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -284,6 +297,14 @@ footer a:hover{color:var(--accent)}
     <div class="runmeta" id="runmeta"></div>
     <div class="sample-note" id="samplenote">◆ Sample data — replace via “Load run” once the full sweep completes</div>
   </header>
+
+  <section id="history-sec" style="display:none">
+    <div class="sec-head"><h2>Every run, <em>ever</em></h2></div>
+    <p class="sub" style="margin-bottom:14px">Each sweep that has been saved. Click one to
+       load it. The <b>gap</b> column is the point: a run that cannot produce one has not
+       measured reliability, whatever its pass rate says.</p>
+    <div style="overflow-x:auto"><table class="histtbl" id="histtbl"></table></div>
+  </section>
 
   <div class="headline">
     <div class="hm"><div class="label">pass@1</div><div class="val" id="p1">—</div><div class="cap">first attempt correct</div></div>
@@ -726,10 +747,47 @@ document.addEventListener("drop", e=>{
 /* Served over HTTP (see dashboard/serve.py), the page loads its own data.
    Over file:// this fetch is blocked, so the sample renders and the picker
    stays as the way in. */
+/* ── history ────────────────────────────────────────────────────────────────
+   serve.py builds every run in reports/, not just the newest, so switching
+   between them is a re-render rather than a round-trip — and a model
+   comparison only reads as one when the rows sit together. */
+let ALL = null;
+
+function renderHistory(){
+  if (!ALL || !ALL.history || ALL.history.length < 2) return;
+  $("#history-sec").style.display = "";
+  const head = ["when","agent","dataset","k","cases","pass@1","pass^k","gap","flaky"];
+  $("#histtbl").innerHTML =
+    `<thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+    ALL.history.map((h,i)=>`<tr class="${i===ALL.active?"cur":""}" data-i="${i}">
+      <td>${esc(h.created_at.slice(0,16).replace("T"," "))}</td>
+      <td>${esc(h.adapter.split(":").pop())}</td>
+      <td>${esc(h.dataset.replace(".jsonl",""))}</td>
+      <td>${h.repeats}</td><td>${h.cases}</td>
+      <td>${(h.p1*100).toFixed(0)}%</td><td>${(h.pk*100).toFixed(0)}%</td>
+      <td class="${h.gap>0?"gapN":"gap0"}">${h.gap.toFixed(1)}</td>
+      <td>${h.flaky}</td></tr>`).join("") + "</tbody>";
+  $("#histtbl").querySelectorAll("tbody tr").forEach(tr => {
+    tr.onclick = () => {
+      ALL.active = +tr.dataset.i;
+      RUN = ALL.runs[ALL.active];
+      render(); renderHistory();
+      window.scrollTo({top:0, behavior:"smooth"});
+    };
+  });
+}
+
+/* Served over HTTP (see dashboard/serve.py), the page loads its own data.
+   Over file:// this fetch is blocked, so the sample renders and the picker
+   stays as the way in. */
 render();
 fetch("../reports/latest.json")
   .then(r => r.ok ? r.json() : Promise.reject())
-  .then(v => { RUN = v.cases ? v : adapt(v); render(); })
+  .then(v => {
+    RUN = v.cases ? v : adapt(v);
+    if (v.runs && v.history) { ALL = v; RUN = v.runs[v.active]; }
+    render(); renderHistory();
+  })
   .catch(() => {});
 </script>
 </body>
