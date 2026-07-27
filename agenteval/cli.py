@@ -13,7 +13,7 @@ import os
 import sys
 
 from .cases import load_dataset
-from .report import render
+from .report import render, render_history
 from .runner import load_run, run_suite, save_run
 
 
@@ -42,6 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     p_rep = sub.add_parser("report", help="print the report for a saved run")
     p_rep.add_argument("run_file")
 
+    p_hist = sub.add_parser("history", help="every saved run, oldest first")
+    p_hist.add_argument("--dir", default="reports")
+    p_hist.add_argument("--dataset", help="only runs of this dataset")
+
     sub.add_parser("diff", help="regression diff between two runs (lands in S4)")
 
     args = parser.parse_args(argv)
@@ -57,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "report":
         print(render(load_run(args.run_file)))
+        return 0
+
+    if args.command == "history":
+        print(render_history(args.dir, dataset=args.dataset))
         return 0
 
     if args.command == "diff":
