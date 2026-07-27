@@ -238,7 +238,9 @@ def summarize(view: dict) -> dict:
 
 
 def main() -> None:
-    explicit = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    args = [a for a in sys.argv[1:] if a != "--publish"]
+    publish = "--publish" in sys.argv
+    explicit = Path(args[0]) if args else None
     paths = sorted(REPORTS.glob("run_*.json"), key=lambda p: p.stat().st_mtime)
     if not paths:
         sys.exit(f"No run files in {REPORTS}. Run `agenteval run ...` first.")
@@ -263,6 +265,37 @@ def main() -> None:
     payload["history"] = history
     payload["runs"] = views
     payload["active"] = active
+
+    if publish:
+        # GitHub Pages serves a directory, not a server, so the published page
+        # gets its data as a *sibling* file. Everything here is already public —
+        # FARS questions, gold SQL, and the SQL a model wrote against it — but
+        # this is the one command in the repo that puts bytes on the internet,
+        # so it is explicit and separate from the local view rather than a flag
+        # on it.
+        # ToyAgent is a deterministic fixture for the test suite, not a result.
+        # Publishing it puts "83% pass@1" next to real model numbers on a page
+        # whose whole point is that the numbers mean something.
+        real = [i for i, v in enumerate(views) if "toy_agent" not in v["adapter"].lower()]
+        if not real:
+            sys.exit("Nothing to publish: every run is a ToyAgent fixture.")
+        pub = dict(views[real[-1]])
+        pub["runs"] = [views[i] for i in real]
+        pub["history"] = [history[i] for i in real]
+        pub["active"] = len(real) - 1
+
+        docs = ROOT / "docs"
+        docs.mkdir(exist_ok=True)
+        (docs / "data.json").write_text(json.dumps(pub, default=str))
+        (docs / "index.html").write_text((ROOT / "dashboard" / "index.html").read_text())
+        (docs / ".nojekyll").write_text("")   # keep Pages from eating dotfiles
+        size = (docs / "data.json").stat().st_size / 1024
+        print(f"→ published {len(real)} real run(s) → docs/ ({size:.0f} KB)")
+        for i in real:
+            print(f"    {history[i]['adapter'][:34]:<35} pass@1 {history[i]['p1']:.0%}  "
+                  f"pass^k {history[i]['pk']:.0%}")
+        print("  commit docs/, then Settings → Pages → source: /docs")
+        return
 
     out = REPORTS / "latest.json"
     out.write_text(json.dumps(payload, indent=2, default=str))
