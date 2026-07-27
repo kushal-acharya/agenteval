@@ -134,19 +134,26 @@ def compare(gold: list[tuple], got: list[tuple], *, ordered: bool) -> tuple[bool
     return True, ""
 
 
-def last_sql(trajectory, tool: str = SQL_TOOL) -> str | None:
-    """The last *successful* SQL the agent ran, or None.
+def last_sql(trajectory, tool: str = SQL_TOOL) -> tuple[str | None, str | None]:
+    """The agent's final SQL call. Returns (sql, error-if-that-call-failed).
 
-    Last, because an agent may inspect the schema before asking its real
-    question — the final query is the one it answered from. Successful,
-    because retrying after a syntax error is good agent behaviour, and
-    grading the discarded attempt would punish recovery.
+    The *last* call, not the last successful one. An agent may inspect the
+    schema before asking its real question, so the final query is the one it
+    answered from. Recovery is still unpunished — a successful retry simply
+    *is* the last call.
+
+    Grading the last *successful* call was the original rule and it was wrong:
+    a real run explored, then tried a verification query that errored, and the
+    scorer silently fell back to the exploratory query and failed the case with
+    "column count: expected 1, got 3" — describing a query the agent never
+    offered as its answer. Reporting the broken query is the truthful verdict.
     """
     for call in reversed(trajectory):
-        if call.name != tool or call.error:
+        if call.name != tool:
             continue
         for key in SQL_ARG_KEYS:
             value = call.arguments.get(key)
             if isinstance(value, str) and value.strip():
-                return value
-    return None
+                return value, call.error
+        return None, call.error
+    return None, None

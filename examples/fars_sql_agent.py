@@ -30,6 +30,24 @@ from agenteval.adapter import AgentAdapter, AgentResult, ToolCall
 from agenteval.cases import Case
 from agenteval.execution import SQL_TOOL, SQLError, run_query
 
+def load_dotenv(path: str | Path = ".env") -> None:
+    """Read KEY=value lines from .env into the environment.
+
+    Six lines of parsing instead of a dependency. `setdefault` matters: a real
+    environment variable always wins over the file, so `ANTHROPIC_API_KEY=... \
+python -m ...` and CI secrets are never silently overridden by a stale .env.
+    """
+    p = Path(path)
+    if not p.exists():
+        return
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 MODEL = os.environ.get("AGENTEVAL_MODEL", "claude-opus-5")
 # Thinking is on by default on Opus 5 and max_tokens caps thinking + text
 # together, so a tight budget truncates the answer rather than the reasoning.
@@ -65,6 +83,16 @@ the data is absent.
 - Columns ending in NAME are human-readable decodes; prefer them over their \
 numeric counterparts.
 - Answer in one or two sentences, stating the number you found.
+
+Your FINAL run_sql call is your answer, and it is read as such:
+- It must return exactly what was asked and nothing more. If the question asks \
+for one value, return one column and one row. If it asks for a ranked list of \
+N, return N rows with only the columns named.
+- Do not append extra context columns to it. Supporting counts are useful in \
+prose, but the final query is the answer itself.
+- Explore freely first — check the schema, sanity-check a total, whatever helps \
+— but the last query you run must be the answer query. Do not run a \
+verification query after it.
 
 Schema:
 """
@@ -125,7 +153,8 @@ class FarsSQLAgent(AgentAdapter):
     def __init__(self, model: str = MODEL) -> None:
         import anthropic  # imported here so the core harness never needs it
 
-        self.model = model
+        load_dotenv()  # in __init__, not at import — importing stays side-effect free
+        self.model = os.environ.get("AGENTEVAL_MODEL", model)
         self.client = anthropic.Anthropic()
         self._schema_cache: dict[str, str] = {}
 

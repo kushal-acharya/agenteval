@@ -81,12 +81,18 @@ def score_execution(case: Case, result: AgentResult, *, tool: str = SQL_TOOL) ->
                      reason="case has no `db` — nothing to execute against")
 
     calls = [c for c in result.trajectory if c.name == tool]
-    sql = last_sql(result.trajectory, tool)
+    sql, call_error = last_sql(result.trajectory, tool)
+    if not calls:
+        return Score(passed=False, scorer="execution",
+                     reason=f"agent never called {tool!r} — answered without querying")
+    if call_error:
+        # The agent's final database action failed. Report *that*, not a verdict
+        # on some earlier exploratory query it never offered as its answer.
+        return Score(passed=False, scorer="execution",
+                     reason=f"agent's final query errored: {call_error}")
     if sql is None:
-        reason = (f"agent never called {tool!r} — answered without querying"
-                  if not calls
-                  else f"all {len(calls)} {tool!r} call(s) errored; last: {calls[-1].error}")
-        return Score(passed=False, scorer="execution", reason=reason)
+        return Score(passed=False, scorer="execution",
+                     reason=f"final {tool!r} call carried no SQL: {calls[-1].arguments}")
 
     # Gold runs first. A broken gold query is a dataset defect, and letting it
     # count as an agent failure would quietly corrupt the pass rate — skip it

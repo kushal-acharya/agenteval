@@ -124,6 +124,28 @@ def test_recovery_after_a_failed_query_is_not_punished(db):
     assert score_case(_case(db, gold), result).passed
 
 
+def test_a_failed_final_query_reports_that_error_not_an_earlier_query(db):
+    """Regression from the first real run.
+
+    The agent explored, got the right rows, then ran a verification query that
+    errored. Falling back to the exploratory query failed the case with
+    "column count: expected 1, got 3" — a verdict on a query the agent never
+    offered as its answer. The final call's own error is the truthful reason.
+    """
+    gold = "SELECT COUNT(*) FROM accidents"
+    result = AgentResult(answer="5", trajectory=[
+        ToolCall(name="run_sql",
+                 arguments={"sql": "SELECT statename, COUNT(*), SUM(fatals) FROM accidents GROUP BY 1"},
+                 output="..."),
+        ToolCall(name="run_sql", arguments={"sql": "SELECT COUNT(*) FROM p JOIN q ON p.year=q.year"},
+                 error="OperationalError: no such column: p.year"),
+    ])
+    score = score_case(_case(db, gold), result)
+    assert not score.passed
+    assert "final query errored" in score.reason and "p.year" in score.reason
+    assert "column count" not in score.reason
+
+
 def test_answering_without_querying_fails(db):
     """The fabrication trap, SQL edition — a fluent answer and no query."""
     score = score_case(_case(db, "SELECT COUNT(*) FROM accidents"),
