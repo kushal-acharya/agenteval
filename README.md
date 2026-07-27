@@ -69,6 +69,26 @@ The harness core depends on nothing but `pydantic`; the vendor SDK is an optiona
 extra used only by that example. Model independence is the point of the adapter
 interface, so `pip install agenteval` must not drag in an SDK.
 
+## Seeing a run
+
+The text report gives you the numbers. The dashboard shows you *why* you got them:
+
+```bash
+python dashboard/serve.py          # newest run in reports/
+python dashboard/serve.py reports/run_<id>.json
+```
+
+It opens a reliability report: pass@1 beside pass^k with the gap between them, then one
+row per question and one square per repeat — so non-determinism is something you can
+see rather than infer. Clicking a row opens the attempt: the grader's verdict and its
+exact reason, the agent's full trajectory (including failed calls, and which one was
+graded), and the gold and agent **result sets side by side**.
+
+`serve.py` is stdlib-only. It exists because a `RunRecord` deliberately stores what
+happened, not what it meant: it has `case_id` but not the question, and the agent's SQL
+but not what that SQL returned. The server joins the run against its dataset and replays
+both queries read-only to reconstruct the comparison.
+
 ## Datasets
 
 - `examples/toy_v1.jsonl` — 12 self-contained cases for the demo.
@@ -117,3 +137,12 @@ LLM-as-judge), `unanswerable` (the agent must decline, not fabricate).
    right; grade the *result set* (S2).
 3. **pass@1 hides flakiness.** A demo that works once isn't a system that
    works; that's why repeats and pass^k are first-class.
+4. **A grader can be wrong more confidently than an agent.** The first real
+   run scored 0/8 while every answer was correct — the agent returned extra
+   context columns and ran sanity checks after finding the answer, and no
+   output contract had been stated. A red suite is a claim about the harness
+   until you have read the trajectories.
+5. **An underspecified question is a fake failure.** "What share…" that never
+   says units marks `50.2` wrong against a gold of `0.502`. Execution grading
+   compares exact values, so its questions must pin down units and rounding —
+   that is dataset authoring, not model error.

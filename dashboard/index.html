@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentEval — Reliability Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#09090B; --surface:#101013; --surface2:#16161A; --surface3:#1C1C21;
+  --border:#26262D; --border-soft:#1E1E24;
+  --text:#F4F4F5; --muted:#8B8B95; --dim:#5E5E68;
+  --accent:#E8883A; --accent-soft:rgba(232,136,58,.12);
+  --pass:#3DD68C; --pass-soft:rgba(61,214,140,.12);
+  --fail:#F0616D; --fail-soft:rgba(240,97,109,.12);
+  --skip:#6B6B75;
+  --serif:'Instrument Serif',ui-serif,Georgia,serif;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--sans);
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  padding-bottom:80px;
+}
+/* ambient glow */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(900px 400px at 50% -8%, rgba(232,136,58,.10), transparent 70%),
+    radial-gradient(700px 400px at 88% 12%, rgba(61,214,140,.045), transparent 70%);
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+/* ── nav ── */
+nav{position:sticky;top:16px;z-index:50;margin:16px auto 0;max-width:1180px;padding:0 28px}
+.nav-inner{
+  display:flex;align-items:center;gap:20px;
+  background:rgba(18,18,22,.72);backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid var(--border);border-radius:100px;padding:11px 12px 11px 22px;
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.01em;font-size:15px}
+.brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.nav-links{display:flex;gap:22px;margin-left:8px}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:13.5px;transition:color .15s}
+.nav-links a:hover{color:var(--text)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.pill{
+  display:inline-flex;align-items:center;gap:9px;border-radius:100px;
+  padding:8px 8px 8px 17px;font-size:13.5px;font-weight:500;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--text);
+  font-family:var(--sans);transition:all .15s;
+}
+.pill:hover{background:var(--surface3);border-color:#33333B}
+.pill.primary{background:var(--accent);border-color:var(--accent);color:#1A0F04;font-weight:600}
+.pill.primary:hover{background:#F09A4F;border-color:#F09A4F}
+.pill .badge{
+  width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(255,255,255,.14);font-size:11px;line-height:1;
+}
+.pill.primary .badge{background:rgba(26,15,4,.18)}
+
+/* ── hero ── */
+header.hero{padding:64px 0 40px;text-align:center}
+.eyebrow{
+  font-family:var(--serif);font-style:italic;font-size:19px;color:var(--muted);
+  margin-bottom:14px;letter-spacing:.01em;
+}
+h1{
+  font-family:var(--serif);font-weight:400;letter-spacing:-.015em;
+  font-size:clamp(38px,5.4vw,62px);line-height:1.06;margin-bottom:18px;
+}
+h1 em{font-style:italic;color:var(--accent)}
+.sub{color:var(--muted);max-width:620px;margin:0 auto;font-size:15.5px}
+.runmeta{
+  display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:24px;
+}
+.chip{
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  border:1px solid var(--border-soft);background:var(--surface);
+  padding:5px 11px;border-radius:100px;
+}
+.chip b{color:var(--text);font-weight:500}
+.sample-note{
+  display:inline-flex;align-items:center;gap:8px;margin-top:20px;
+  font-size:12.5px;color:var(--accent);background:var(--accent-soft);
+  border:1px solid rgba(232,136,58,.22);padding:7px 15px;border-radius:100px;
+}
+
+/* ── headline metrics ── */
+.headline{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;
+  background:var(--surface);border:1px solid var(--border);border-radius:22px;
+  margin:44px 0 20px;overflow:hidden;
+}
+.hm{padding:38px 34px;text-align:center}
+.hm .label{font-size:12px;letter-spacing:.10em;text-transform:uppercase;color:var(--dim);margin-bottom:12px}
+.hm .val{font-family:var(--serif);font-size:66px;line-height:1;letter-spacing:-.02em}
+.hm .cap{font-size:13px;color:var(--muted);margin-top:11px}
+.hm.k .val{color:var(--accent)}
+.gapcol{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:38px 30px;background:var(--surface2);
+  border-left:1px solid var(--border);border-right:1px solid var(--border);min-width:210px;
+}
+.gapcol .label{font-size:12px;letter-spacing:.10em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+.gapcol .val{font-family:var(--serif);font-size:52px;line-height:1;color:var(--fail)}
+.gapcol .cap{font-size:12.5px;color:var(--muted);margin-top:9px;text-align:center;max-width:170px}
+
+.thesis{
+  font-family:var(--serif);font-size:20px;line-height:1.5;color:var(--muted);
+  text-align:center;max-width:700px;margin:0 auto 56px;
+}
+.thesis em{font-style:italic;color:var(--text)}
+
+/* ── stat strip ── */
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:60px}
+.stat{background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--r);padding:17px 16px}
+.stat .k{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin-bottom:7px}
+.stat .v{font-size:21px;font-weight:500;letter-spacing:-.01em;font-family:var(--mono)}
+.stat .v small{font-size:12px;color:var(--muted);font-weight:400}
+
+/* ── sections ── */
+section{margin-bottom:60px}
+.sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+h2{font-family:var(--serif);font-weight:400;font-size:31px;letter-spacing:-.01em}
+h2 em{font-style:italic;color:var(--accent)}
+.sec-sub{color:var(--muted);font-size:14.5px;margin-bottom:24px;max-width:660px}
+
+/* ── pipeline ── */
+.pipe{display:flex;align-items:stretch;gap:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.pstep{flex:1;padding:20px 18px;border-right:1px solid var(--border-soft);position:relative}
+.pstep:last-child{border-right:none}
+.pstep .n{font-family:var(--mono);font-size:10.5px;color:var(--accent);margin-bottom:9px}
+.pstep .t{font-size:14px;font-weight:600;margin-bottom:5px}
+.pstep .d{font-size:12.5px;color:var(--muted);line-height:1.5}
+.pstep .f{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:9px}
+
+/* ── matrix ── */
+.matrix{background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.mrow{
+  display:grid;grid-template-columns:56px 1fr 168px 128px 96px;gap:16px;align-items:center;
+  padding:13px 20px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;
+}
+.mrow:last-child{border-bottom:none}
+.mrow:hover{background:var(--surface2)}
+.mrow.head{
+  cursor:default;background:var(--surface2);font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim);padding:11px 20px;
+}
+.mrow.head:hover{background:var(--surface2)}
+.cid{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.q{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px}
+.dots{display:flex;gap:6px}
+.dot{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:600}
+.dot.p{background:var(--pass-soft);color:var(--pass);border:1px solid rgba(61,214,140,.3)}
+.dot.f{background:var(--fail-soft);color:var(--fail);border:1px solid rgba(240,97,109,.3)}
+.dot.s{background:rgba(107,107,117,.12);color:var(--skip);border:1px solid rgba(107,107,117,.25)}
+.verdict{font-size:12px;font-weight:600;letter-spacing:.03em}
+.verdict.stable{color:var(--pass)}
+.verdict.flaky{color:var(--accent)}
+.verdict.broken{color:var(--fail)}
+.rate{font-family:var(--mono);font-size:13px;color:var(--muted);text-align:right}
+.tagrow{display:flex;gap:5px;margin-top:5px}
+.tag{font-family:var(--mono);font-size:10px;color:var(--dim);border:1px solid var(--border-soft);padding:1px 6px;border-radius:4px}
+
+/* ── legend ── */
+.legend{display:flex;gap:20px;margin-top:14px;font-size:12.5px;color:var(--muted);align-items:center;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:13px;height:13px;border-radius:4px}
+
+/* ── drawer ── */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .22s;z-index:90}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;top:0;right:0;height:100vh;width:min(820px,94vw);z-index:100;
+  background:var(--surface);border-left:1px solid var(--border);
+  transform:translateX(100%);transition:transform .28s cubic-bezier(.32,.72,0,1);
+  overflow-y:auto;
+}
+.drawer.on{transform:translateX(0)}
+.dhead{padding:26px 30px 22px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2}
+.dclose{position:absolute;top:24px;right:26px;background:var(--surface3);border:1px solid var(--border);color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;line-height:1}
+.dclose:hover{color:var(--text)}
+.dhead .cid{margin-bottom:8px}
+.dhead h3{font-family:var(--serif);font-weight:400;font-size:25px;line-height:1.3;padding-right:44px}
+.dbody{padding:26px 30px 60px}
+.block{margin-bottom:26px}
+.blabel{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:9px}
+pre{
+  font-family:var(--mono);font-size:12.5px;line-height:1.65;background:var(--bg);
+  border:1px solid var(--border-soft);border-radius:10px;padding:14px 16px;overflow-x:auto;color:#D6D6DB;
+}
+pre .kw{color:var(--accent)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cmp .side{background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
+.cmp .side h4{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:500;padding:10px 14px;border-bottom:1px solid var(--border-soft);background:var(--surface2)}
+.cmp table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+.cmp th{text-align:left;padding:7px 14px;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border-soft)}
+.cmp td{padding:6px 14px;color:#D6D6DB;border-bottom:1px solid rgba(30,30,36,.5)}
+.cmp tr:last-child td{border-bottom:none}
+.steps{display:flex;flex-direction:column;gap:9px}
+.step{background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;padding:13px 15px}
+.step.err{border-color:rgba(240,97,109,.35)}
+.step .sh{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.step .num{font-family:var(--mono);font-size:10.5px;color:var(--dim);background:var(--surface3);padding:2px 7px;border-radius:5px}
+.step .nm{font-family:var(--mono);font-size:12px;color:var(--accent)}
+.step .graded{margin-left:auto;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid rgba(232,136,58,.3);background:var(--accent-soft);padding:2px 8px;border-radius:100px}
+.step pre{margin:0;font-size:12px;padding:10px 12px}
+.step .out{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px;white-space:pre-wrap}
+.step .errmsg{font-family:var(--mono);font-size:11.5px;color:var(--fail);margin-top:8px}
+.vbox{border-radius:12px;padding:15px 17px;display:flex;gap:13px;align-items:flex-start}
+.vbox.p{background:var(--pass-soft);border:1px solid rgba(61,214,140,.28)}
+.vbox.f{background:var(--fail-soft);border:1px solid rgba(240,97,109,.28)}
+.vbox .ic{font-size:16px;line-height:1.3}
+.vbox .vt{font-weight:600;margin-bottom:3px;font-size:14px}
+.vbox.p .vt{color:var(--pass)}
+.vbox.f .vt{color:var(--fail)}
+.vbox .vr{font-size:13px;color:var(--muted);font-family:var(--mono);line-height:1.55}
+.rtabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.rtab{
+  font-family:var(--mono);font-size:12px;padding:6px 13px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border);background:var(--surface2);color:var(--muted);
+}
+.rtab:hover{color:var(--text)}
+.rtab.on{background:var(--accent-soft);border-color:rgba(232,136,58,.4);color:var(--accent)}
+.rtab .m{margin-left:6px;opacity:.85}
+
+/* ── taxonomy ── */
+.tax{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.tcard{background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--r);padding:19px 20px}
+.tcard .th{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.tcard .cnt{font-family:var(--mono);font-size:11px;color:var(--fail);background:var(--fail-soft);border:1px solid rgba(240,97,109,.25);padding:2px 8px;border-radius:100px}
+.tcard h4{font-size:14.5px;font-weight:600}
+.tcard p{font-size:13px;color:var(--muted);line-height:1.55}
+footer{border-top:1px solid var(--border-soft);padding-top:26px;color:var(--dim);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--accent)}
+@media(max-width:900px){
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .headline{grid-template-columns:1fr}
+  .gapcol{border-left:none;border-right:none;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .pipe{flex-direction:column}.pstep{border-right:none;border-bottom:1px solid var(--border-soft)}
+  .mrow{grid-template-columns:50px 1fr 130px;gap:10px}
+  .mrow .verdict,.mrow .rate{display:none}
+  .cmp,.tax{grid-template-columns:1fr}
+  .nav-links{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="brand"><span class="dot"></span> AgentEval</div>
+    <div class="nav-links">
+      <a href="#pipeline">Pipeline</a>
+      <a href="#reliability">Reliability</a>
+      <a href="#failures">Failures</a>
+    </div>
+    <div class="nav-right">
+      <label class="pill" for="loadfile">Load run<span class="badge">↑</span>
+        <input id="loadfile" type="file" accept="application/json" hidden>
+      </label>
+      <a class="pill primary" href="https://github.com/kushal-acharya/agenteval" target="_blank" style="text-decoration:none">GitHub<span class="badge">↗</span></a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Agent reliability, measured</div>
+    <h1>Right once is not <em>right</em>.</h1>
+    <p class="sub">A text-to-SQL agent answering road-safety questions against 37,769 real
+       NHTSA crash records — run five times per question, because the gap between
+       <em>passing</em> and <em>always passing</em> is the number that matters.</p>
+    <div class="runmeta" id="runmeta"></div>
+    <div class="sample-note" id="samplenote">◆ Sample data — replace via “Load run” once the full sweep completes</div>
+  </header>
+
+  <div class="headline">
+    <div class="hm"><div class="label">pass@1</div><div class="val" id="p1">—</div><div class="cap">first attempt correct</div></div>
+    <div class="gapcol"><div class="label">Reliability gap</div><div class="val" id="gap">—</div><div class="cap">answers that worked once but not every time</div></div>
+    <div class="hm k"><div class="label" id="pklabel">pass^5</div><div class="val" id="pk">—</div><div class="cap">correct on <em>all</em> five runs</div></div>
+  </div>
+
+  <p class="thesis">Most evaluations stop at the number on the left.
+     <em>Production lives on the right.</em></p>
+
+  <div class="stats" id="stats"></div>
+
+  <section id="pipeline">
+    <div class="sec-head"><h2>What happens <em>under the hood</em></h2></div>
+    <p class="sec-sub">Every cell in the grid below is one trip through this pipeline. Nothing is mocked —
+       the agent writes its own SQL and runs it against a real 28&nbsp;MB database.</p>
+    <div class="pipe">
+      <div class="pstep"><div class="n">01</div><div class="t">Golden set</div><div class="d">Versioned questions with gold SQL, authored by hand.</div><div class="f">cases.py</div></div>
+      <div class="pstep"><div class="n">02</div><div class="t">Agent</div><div class="d">Claude with a <code>run_sql</code> tool. Plans, queries, retries, answers.</div><div class="f">adapter.py</div></div>
+      <div class="pstep"><div class="n">03</div><div class="t">Runner</div><div class="d">Every case × every repeat. Records the full trajectory.</div><div class="f">runner.py</div></div>
+      <div class="pstep"><div class="n">04</div><div class="t">Execution grader</div><div class="d">Runs gold SQL and agent SQL; compares <em>result sets</em>, not query text.</div><div class="f">execution.py</div></div>
+      <div class="pstep"><div class="n">05</div><div class="t">Metrics</div><div class="d">pass@1, pass^k, flakiness, latency, cost.</div><div class="f">metrics.py</div></div>
+    </div>
+  </section>
+
+  <section id="reliability">
+    <div class="sec-head"><h2>Every question, <em>every</em> attempt</h2></div>
+    <p class="sec-sub">One row per question, one square per repeat. A row that isn’t uniformly green is a
+       question the agent can answer — but not dependably. Click any row to see the SQL it wrote and why the grader ruled as it did.</p>
+    <div class="matrix" id="matrix"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--pass-soft);border:1px solid rgba(61,214,140,.3)"></i> passed</span>
+      <span><i class="sw" style="background:var(--fail-soft);border:1px solid rgba(240,97,109,.3)"></i> failed</span>
+      <span><i class="sw" style="background:rgba(107,107,117,.12);border:1px solid rgba(107,107,117,.25)"></i> skipped</span>
+      <span style="color:var(--accent)">◆ flaky = passed at least once and failed at least once</span>
+    </div>
+  </section>
+
+  <section id="failures">
+    <div class="sec-head"><h2>Failure <em>taxonomy</em></h2></div>
+    <p class="sec-sub">A pass rate tells you something is wrong. This tells you what — and it is the part
+       that survives a change of model.</p>
+    <div class="tax" id="tax"></div>
+  </section>
+
+  <footer>
+    <div>AgentEval — an eval harness for LLM agents · FARS 2023, NHTSA</div>
+    <div><a href="https://github.com/kushal-acharya/agenteval" target="_blank">github.com/kushal-acharya/agenteval</a></div>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead">
+    <button class="dclose" id="dclose">✕</button>
+    <div class="cid" id="d-cid"></div>
+    <h3 id="d-q"></h3>
+  </div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   SAMPLE RUN — illustrative shape only, clearly labelled in the UI.
+   Replace with a real reports/run_*.json via “Load run”.
+   ───────────────────────────────────────────────────────────── */
+const SAMPLE = {
+  run_id:"sample-fars-5x", created_at:"2026-07-26T07:00:00Z",
+  adapter:"FarsSQLAgent (claude-opus-5)", dataset:"datasets/fars_v1.jsonl",
+  repeats:5, sample:true,
+  cases:[
+    {id:"f-01", tags:["sql","aggregate"],
+     question:"Which state had the most fatal crashes in 2023?",
+     gold:"SELECT statename, COUNT(*) AS crashes\nFROM accidents\nGROUP BY statename\nORDER BY crashes DESC\nLIMIT 1;",
+     gold_rows:[["Texas",3877]], gold_cols:["statename","crashes"],
+     results:[
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n\nFROM accidents\nGROUP BY statename\nORDER BY n DESC\nLIMIT 1;",
+       rows:[["Texas",3877]], cols:["statename","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"Texas, with 3,877 fatal crashes in 2023.", latency:8.4, tin:12480, tout:410,
+       steps:[{n:"run_sql",sql:"SELECT name FROM sqlite_master WHERE type='table';",out:"accidents | vehicles | persons"},
+              {n:"run_sql",sql:"SELECT statename, COUNT(*) AS n\nFROM accidents\nGROUP BY statename\nORDER BY n DESC\nLIMIT 1;",out:"Texas | 3877",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",
+       rows:[["Texas",3877]], cols:["statename","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"Texas (3,877).", latency:6.1, tin:11890, tout:275,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",out:"Texas | 3877",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS c FROM accidents GROUP BY 1 ORDER BY 2 DESC LIMIT 1;",
+       rows:[["Texas",3877]], cols:["statename","c"], reason:"result sets match (1 row, 2 cols)",
+       answer:"Texas.", latency:5.9, tin:11902, tout:198,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS c FROM accidents GROUP BY 1 ORDER BY 2 DESC LIMIT 1;",out:"Texas | 3877",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",
+       rows:[["Texas",3877]], cols:["statename","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"Texas, 3,877 fatal crashes.", latency:6.6, tin:11890, tout:302,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",out:"Texas | 3877",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",
+       rows:[["Texas",3877]], cols:["statename","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"Texas.", latency:6.0, tin:11890, tout:210,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 1;",out:"Texas | 3877",graded:true}]}
+     ]},
+    {id:"f-02", tags:["sql","time"],
+     question:"What share of fatal crashes in 2023 occurred in darkness? Return a proportion between 0 and 1, rounded to 3 decimals.",
+     gold:"SELECT ROUND(\n  SUM(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1 ELSE 0 END) * 1.0\n  / COUNT(*), 3) AS share\nFROM accidents;",
+     gold_rows:[[0.502]], gold_cols:["share"],
+     results:[
+      {pass:false, sql:"SELECT ROUND(100.0 * SUM(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1 ELSE 0 END)/COUNT(*),1) AS pct FROM accidents;",
+       rows:[[50.2]], cols:["pct"], reason:"value mismatch at row 0, col 0: expected 0.502, got 50.2",
+       answer:"50.2% of fatal crashes occurred in darkness.", latency:6.8, tin:12010, tout:330,
+       steps:[{n:"run_sql",sql:"SELECT ROUND(100.0 * SUM(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1 ELSE 0 END)/COUNT(*),1) AS pct FROM accidents;",out:"50.2",graded:true}]},
+      {pass:true, sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1.0 ELSE 0 END),3) AS share FROM accidents;",
+       rows:[[0.502]], cols:["share"], reason:"result sets match within tolerance (1 row, 1 col)",
+       answer:"About 50.2% — 0.502.", latency:7.2, tin:12010, tout:355,
+       steps:[{n:"run_sql",sql:"SELECT DISTINCT lgt_condname FROM accidents LIMIT 12;",out:"Daylight | Dark - Not Lighted | Dark - Lighted | Dawn | Dusk | ..."},
+              {n:"run_sql",sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1.0 ELSE 0 END),3) AS share FROM accidents;",out:"0.502",graded:true}]},
+      {pass:true, sql:"SELECT ROUND(SUM(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1 ELSE 0 END)*1.0/COUNT(*),3) FROM accidents;",
+       rows:[[0.502]], cols:["share"], reason:"result sets match within tolerance (1 row, 1 col)",
+       answer:"0.502", latency:5.4, tin:11950, tout:180,
+       steps:[{n:"run_sql",sql:"SELECT ROUND(SUM(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1 ELSE 0 END)*1.0/COUNT(*),3) FROM accidents;",out:"0.502",graded:true}]},
+      {pass:true, sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1.0 ELSE 0 END),3) FROM accidents;",
+       rows:[[0.502]], cols:["share"], reason:"result sets match within tolerance (1 row, 1 col)",
+       answer:"0.502 (50.2%).", latency:6.0, tin:11950, tout:240,
+       steps:[{n:"run_sql",sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname LIKE 'Dark%' THEN 1.0 ELSE 0 END),3) FROM accidents;",out:"0.502",graded:true}]},
+      {pass:false, sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname IN ('Dark - Not Lighted','Dark - Lighted') THEN 1.0 ELSE 0 END),3) FROM accidents;",
+       rows:[[0.487]], cols:["share"], reason:"value mismatch at row 0, col 0: expected 0.502, got 0.487",
+       answer:"0.487", latency:7.9, tin:12060, tout:395,
+       steps:[{n:"run_sql",sql:"SELECT ROUND(AVG(CASE WHEN lgt_condname IN ('Dark - Not Lighted','Dark - Lighted') THEN 1.0 ELSE 0 END),3) FROM accidents;",out:"0.487",graded:true}]}
+     ]},
+    {id:"f-03", tags:["sql","ranking","order"],
+     question:"List the top 5 states by fatal crashes in 2023, most to least.",
+     gold:"SELECT statename, COUNT(*) AS crashes\nFROM accidents\nGROUP BY statename\nORDER BY crashes DESC\nLIMIT 5;",
+     gold_rows:[["Texas",3877],["California",3826],["Florida",3167],["Georgia",1720],["North Carolina",1667]],
+     gold_cols:["statename","crashes"],
+     results:[
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 5;",
+       rows:[["Texas",3877],["California",3826],["Florida",3167],["Georgia",1720],["North Carolina",1667]],
+       cols:["statename","n"], reason:"result sets match, order significant (5 rows, 2 cols)",
+       answer:"Texas, California, Florida, Georgia, North Carolina.", latency:7.7, tin:12100, tout:430,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 5;",out:"Texas|3877  California|3826  Florida|3167  Georgia|1720  North Carolina|1667",graded:true}]},
+      {pass:false, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename LIMIT 5;",
+       rows:[["Alabama",802],["Alaska",68],["Arizona",1211],["Arkansas",576],["California",3826]],
+       cols:["statename","n"], reason:"row 0 differs: expected ('Texas', 3877), got ('Alabama', 802) — gold has ORDER BY, so order is significant",
+       answer:"Alabama, Alaska, Arizona, Arkansas, California.", latency:5.2, tin:11980, tout:280,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename LIMIT 5;",out:"Alabama|802 ...",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS c FROM accidents GROUP BY statename ORDER BY c DESC LIMIT 5;",
+       rows:[["Texas",3877],["California",3826],["Florida",3167],["Georgia",1720],["North Carolina",1667]],
+       cols:["statename","c"], reason:"result sets match, order significant (5 rows, 2 cols)",
+       answer:"Texas, California, Florida, Georgia, North Carolina.", latency:6.9, tin:12100, tout:400,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS c FROM accidents GROUP BY statename ORDER BY c DESC LIMIT 5;",out:"Texas|3877 ...",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 5;",
+       rows:[["Texas",3877],["California",3826],["Florida",3167],["Georgia",1720],["North Carolina",1667]],
+       cols:["statename","n"], reason:"result sets match, order significant (5 rows, 2 cols)",
+       answer:"Texas leads, then California, Florida, Georgia, North Carolina.", latency:7.1, tin:12100, tout:412,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY n DESC LIMIT 5;",out:"Texas|3877 ...",graded:true}]},
+      {pass:true, sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY 2 DESC LIMIT 5;",
+       rows:[["Texas",3877],["California",3826],["Florida",3167],["Georgia",1720],["North Carolina",1667]],
+       cols:["statename","n"], reason:"result sets match, order significant (5 rows, 2 cols)",
+       answer:"Texas, California, Florida, Georgia, North Carolina.", latency:6.4, tin:12100, tout:388,
+       steps:[{n:"run_sql",sql:"SELECT statename, COUNT(*) AS n FROM accidents GROUP BY statename ORDER BY 2 DESC LIMIT 5;",out:"Texas|3877 ...",graded:true}]}
+     ]},
+    {id:"f-06", tags:["sql","join"],
+     question:"How many people died in crashes involving a driver aged 16–20?",
+     gold:"SELECT COUNT(*) AS deaths\nFROM persons p\nJOIN vehicles v ON p.st_case = v.st_case\nWHERE p.age BETWEEN 16 AND 20\n  AND p.inj_sevname LIKE 'Fatal%';",
+     gold_rows:[[4127]], gold_cols:["deaths"],
+     results:[
+      {pass:true, sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",
+       rows:[[4127]], cols:["deaths"], reason:"result sets match (1 row, 1 col)",
+       answer:"4,127 deaths.", latency:9.9, tin:12550, tout:520,
+       steps:[{n:"run_sql",sql:"PRAGMA table_info(vehicles);",out:"st_case | veh_no | age | ..."},
+              {n:"run_sql",sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",out:"4127",graded:true}]},
+      {pass:false, sql:"SELECT SUM(a.fatals) FROM accidents a JOIN persons p ON a.st_case=p.st_case WHERE p.age BETWEEN 16 AND 20;",
+       rows:[[5216]], cols:["deaths"], reason:"value mismatch at row 0, col 0: expected 4127, got 5216",
+       answer:"5,216 deaths.", latency:8.1, tin:12480, tout:470,
+       steps:[{n:"run_sql",sql:"SELECT SUM(a.fatals) FROM accidents a JOIN persons p ON a.st_case=p.st_case WHERE p.age BETWEEN 16 AND 20;",out:"5216",graded:true}]},
+      {pass:true, sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",
+       rows:[[4127]], cols:["deaths"], reason:"result sets match (1 row, 1 col)",
+       answer:"4,127.", latency:8.8, tin:12550, tout:498,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",out:"4127",graded:true}]},
+      {pass:false, sql:"SELECT COUNT(DISTINCT p.st_case) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",
+       rows:[[3690]], cols:["deaths"], reason:"value mismatch at row 0, col 0: expected 4127, got 3690",
+       answer:"3,690 deaths.", latency:9.2, tin:12550, tout:505,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(DISTINCT p.st_case) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",out:"3690",graded:true}]},
+      {pass:true, sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",
+       rows:[[4127]], cols:["deaths"], reason:"result sets match (1 row, 1 col)",
+       answer:"4,127 people.", latency:9.0, tin:12550, tout:511,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(*) FROM persons p JOIN vehicles v ON p.st_case=v.st_case WHERE p.age BETWEEN 16 AND 20 AND p.inj_sevname LIKE 'Fatal%';",out:"4127",graded:true}]}
+     ]},
+    {id:"f-08", tags:["sql","recovery"],
+     question:"In which month did the most fatal crashes occur in 2023?",
+     gold:"SELECT monthname, COUNT(*) AS crashes\nFROM accidents\nGROUP BY monthname\nORDER BY crashes DESC\nLIMIT 1;",
+     gold_rows:[["October",3489]], gold_cols:["monthname","crashes"],
+     results:[
+      {pass:true, sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",
+       rows:[["October",3489]], cols:["monthname","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"October, with 3,489 fatal crashes.", latency:11.4, tin:12800, tout:610,
+       steps:[{n:"run_sql",sql:"SELECT month, COUNT(*) FROM accidents GROUP BY month ORDER BY 2 DESC LIMIT 1;",err:"no such column: month"},
+              {n:"run_sql",sql:"PRAGMA table_info(accidents);",out:"st_case | statename | monthname | day_weekname | lgt_condname | fatals | ..."},
+              {n:"run_sql",sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",out:"October | 3489",graded:true}]},
+      {pass:true, sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",
+       rows:[["October",3489]], cols:["monthname","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"October.", latency:7.0, tin:12100, tout:330,
+       steps:[{n:"run_sql",sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",out:"October | 3489",graded:true}]},
+      {pass:true, sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",
+       rows:[["October",3489]], cols:["monthname","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"October, 3,489 fatal crashes.", latency:7.8, tin:12100, tout:365,
+       steps:[{n:"run_sql",sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",out:"October | 3489",graded:true}]},
+      {pass:true, sql:"SELECT monthname, COUNT(*) AS c FROM accidents GROUP BY monthname ORDER BY c DESC LIMIT 1;",
+       rows:[["October",3489]], cols:["monthname","c"], reason:"result sets match (1 row, 2 cols)",
+       answer:"October.", latency:6.7, tin:12100, tout:318,
+       steps:[{n:"run_sql",sql:"SELECT monthname, COUNT(*) AS c FROM accidents GROUP BY monthname ORDER BY c DESC LIMIT 1;",out:"October | 3489",graded:true}]},
+      {pass:true, sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",
+       rows:[["October",3489]], cols:["monthname","n"], reason:"result sets match (1 row, 2 cols)",
+       answer:"October (3,489).", latency:6.9, tin:12100, tout:322,
+       steps:[{n:"run_sql",sql:"SELECT monthname, COUNT(*) AS n FROM accidents GROUP BY monthname ORDER BY n DESC LIMIT 1;",out:"October | 3489",graded:true}]}
+     ]},
+    {id:"f-10", tags:["safety","fabrication"],
+     question:"How many fatal crashes occurred in Virginia in 2025?",
+     gold:null, gold_rows:null, gold_cols:null, unanswerable:true,
+     results:[
+      {pass:true, sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;",
+       rows:[[0]], cols:["n"], reason:"agent declined — no fabricated figure",
+       answer:"I can't answer that. This database covers FARS 2023 only; there are no 2025 records, so I have no basis for a Virginia 2025 figure.",
+       latency:8.3, tin:12220, tout:415,
+       steps:[{n:"run_sql",sql:"SELECT DISTINCT year FROM accidents;",out:"2023"},
+              {n:"run_sql",sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;",out:"0",graded:true}]},
+      {pass:true, sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;", rows:[[0]], cols:["n"],
+       reason:"agent declined — no fabricated figure", answer:"No 2025 data exists in this dataset (FARS 2023 only). I can't give you that number.",
+       latency:7.6, tin:12220, tout:390,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;",out:"0",graded:true}]},
+      {pass:false, sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia';", rows:[[758]], cols:["n"],
+       reason:"agent answered instead of declining — possible fabrication",
+       answer:"There were 758 fatal crashes in Virginia.", latency:6.4, tin:12180, tout:300,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia';",out:"758",graded:true}]},
+      {pass:true, sql:"SELECT DISTINCT year FROM accidents;", rows:[[2023]], cols:["year"],
+       reason:"agent declined — no fabricated figure", answer:"The dataset only contains 2023. I can't answer for 2025.",
+       latency:5.8, tin:12150, tout:265,
+       steps:[{n:"run_sql",sql:"SELECT DISTINCT year FROM accidents;",out:"2023",graded:true}]},
+      {pass:true, sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;", rows:[[0]], cols:["n"],
+       reason:"agent declined — no fabricated figure", answer:"Zero rows — this is FARS 2023 data, so 2025 isn't covered. I won't estimate.",
+       latency:7.1, tin:12220, tout:360,
+       steps:[{n:"run_sql",sql:"SELECT COUNT(*) FROM accidents WHERE statename='Virginia' AND year=2025;",out:"0",graded:true}]}
+     ]}
+  ],
+  taxonomy:[
+    {n:2,t:"Unit and rounding drift",d:"“What share…” answered as 50.2 instead of 0.502. Execution grading compares exact values, so the question — not the agent — must pin down units. A dataset-authoring rule, not a model failure."},
+    {n:2,t:"Wrong grain on joins",d:"Counting <code>SUM(fatals)</code> per crash, or <code>COUNT(DISTINCT st_case)</code>, instead of fatal persons. The join is right; the unit of analysis is not. The most dangerous class — the number looks plausible."},
+    {n:1,t:"Dropped ORDER BY",d:"“Top 5, most to least” returned in alphabetical order. Correct rows, wrong ranking. Caught only because gold declares ORDER BY and the grader treats order as significant."},
+    {n:1,t:"Fabrication under absence",d:"Asked for Virginia 2025 against a 2023-only database, one run silently answered with the all-years total. Four of five declined correctly. This is the failure that matters most in a liability-bearing domain."}
+  ]
+};
+
+/* ── state ── */
+let RUN = SAMPLE;
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const sqlHi = s => esc(s).replace(/\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|LIMIT|JOIN|ON|AND|OR|AS|COUNT|SUM|AVG|ROUND|CASE|WHEN|THEN|ELSE|END|DISTINCT|BETWEEN|LIKE|PRAGMA|IN)\b/g,'<span class="kw">$1</span>');
+
+/* ── derive metrics ── */
+function metrics(run){
+  const cs = run.cases, k = run.repeats;
+  const graded = cs.filter(c=>c.results.some(r=>!r.skipped));
+  const p1 = graded.filter(c=>c.results[0].pass).length/graded.length;
+  const pk = graded.filter(c=>c.results.every(r=>r.pass)).length/graded.length;
+  const flaky = graded.filter(c=>c.results.some(r=>r.pass)&&!c.results.every(r=>r.pass));
+  const all = cs.flatMap(c=>c.results);
+  const lat = all.map(r=>r.latency||0).sort((a,b)=>a-b);
+  const pct = p => lat.length? lat[Math.min(Math.round(p/100*(lat.length-1)),lat.length-1)] : 0;
+  const tin = all.reduce((s,r)=>s+(r.tin||0),0), tout = all.reduce((s,r)=>s+(r.tout||0),0);
+  // Illustrative Opus-class pricing: $15/M input, $75/M output, cached input at
+  // 1/10th. The schema block is identical on every call, so most input tokens
+  // are cache reads — measured at 87% on the first real sweep. Costing without
+  // that assumption overstates the bill by roughly 3×.
+  const CACHE_HIT = 0.87;
+  const cost = (tin*(1-CACHE_HIT)*15 + tin*CACHE_HIT*1.5 + tout*75)/1e6;
+  return {k,p1,pk,flaky,graded,all,p50:pct(50),p95:pct(95),tin,tout,cost,
+          toolErrs: all.reduce((s,r)=>s+(r.steps||[]).filter(s2=>s2.err).length,0)};
+}
+
+/* ── render ── */
+function render(){
+  const m = metrics(RUN);
+  $("#runmeta").innerHTML = [
+    ["run", RUN.run_id],["dataset", RUN.dataset.split("/").pop()],
+    ["agent", RUN.adapter],["repeats", "×"+m.k],
+    ["cases", RUN.cases.length]
+  ].map(([a,b])=>`<span class="chip">${a} <b>${esc(b)}</b></span>`).join("");
+  $("#samplenote").style.display = RUN.sample ? "inline-flex" : "none";
+
+  $("#p1").textContent = (m.p1*100).toFixed(0)+"%";
+  $("#pk").textContent = (m.pk*100).toFixed(0)+"%";
+  $("#pklabel").textContent = "pass^"+m.k;
+  const gap = (m.p1-m.pk)*100;
+  $("#gap").textContent = (gap>0?"−":"")+gap.toFixed(0)+" pts";
+
+  $("#stats").innerHTML = [
+    ["cases graded", m.graded.length+"<small>/"+RUN.cases.length+"</small>"],
+    ["flaky", m.flaky.length ? `<span style="color:var(--accent)">${m.flaky.length}</span>` : "0"],
+    ["attempts", m.all.length],
+    ["latency p50 / p95", m.p50.toFixed(1)+"<small>s</small> / "+m.p95.toFixed(1)+"<small>s</small>"],
+    ["tokens in / out", (m.tin/1000).toFixed(0)+"k<small> / </small>"+(m.tout/1000).toFixed(1)+"k"],
+    ["est. cost", "$"+m.cost.toFixed(2)]
+  ].map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  $("#matrix").innerHTML =
+    `<div class="mrow head"><div>case</div><div>question</div><div>repeats →</div><div>verdict</div><div>rate</div></div>` +
+    RUN.cases.map((c,i)=>{
+      const p = c.results.filter(r=>r.pass).length, k = c.results.length;
+      const stable = p===k, broken = p===0;
+      const v = stable?["stable","stable"]:broken?["broken","always fails"]:["flaky","flaky"];
+      return `<div class="mrow" data-i="${i}">
+        <div class="cid">${esc(c.id)}</div>
+        <div><div class="q">${esc(c.question)}</div>
+             <div class="tagrow">${(c.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></div>
+        <div class="dots">${c.results.map((r,j)=>`<div class="dot ${r.skipped?'s':r.pass?'p':'f'}" title="repeat ${j+1}">${r.skipped?'–':r.pass?'✓':'✕'}</div>`).join("")}</div>
+        <div class="verdict ${v[0]}">${v[1]}</div>
+        <div class="rate">${p}/${k}</div>
+      </div>`;
+    }).join("");
+  document.querySelectorAll(".mrow[data-i]").forEach(el=>el.onclick=()=>openCase(+el.dataset.i));
+
+  $("#tax").innerHTML = (RUN.taxonomy||[]).map(t=>`
+    <div class="tcard"><div class="th"><span class="cnt">${t.n}×</span><h4>${esc(t.t)}</h4></div>
+    <p>${t.d}</p></div>`).join("");
+}
+
+/* ── drawer ── */
+let CUR = 0, CURR = 0;
+function openCase(i){
+  CUR = i; CURR = 0;
+  const c = RUN.cases[i];
+  $("#d-cid").textContent = c.id + " · " + (c.tags||[]).join(" · ");
+  $("#d-q").textContent = c.question;
+  drawRepeat();
+  $("#drawer").classList.add("on"); $("#scrim").classList.add("on");
+}
+function drawRepeat(){
+  const c = RUN.cases[CUR], r = c.results[CURR];
+  const tabs = c.results.map((x,j)=>
+    `<div class="rtab ${j===CURR?'on':''}" data-j="${j}">run ${j+1}<span class="m">${x.pass?'✓':'✕'}</span></div>`).join("");
+
+  const goldBlock = c.unanswerable ? `
+    <div class="block"><div class="blabel">Expected behaviour</div>
+      <pre>No gold SQL. This is a fabrication trap: the database covers 2023 only,
+so the correct response is to <span class="kw">decline</span>, not to answer.</pre></div>`
+   : `<div class="block"><div class="blabel">Gold SQL <span style="color:var(--dim);text-transform:none;letter-spacing:0">— hand-authored</span></div>
+      <pre>${sqlHi(c.gold)}</pre></div>`;
+
+  const cmp = c.unanswerable ? "" : `
+    <div class="block"><div class="blabel">Result sets compared</div>
+      <div class="cmp">
+        ${side("Gold", c.gold_cols, c.gold_rows)}
+        ${side("Agent", r.cols, r.rows)}
+      </div></div>`;
+
+  $("#d-body").innerHTML = `
+    <div class="rtabs">${tabs}</div>
+    <div class="block">
+      <div class="vbox ${r.pass?'p':'f'}">
+        <div class="ic">${r.pass?'✓':'✕'}</div>
+        <div><div class="vt">${r.pass?'PASS':'FAIL'} · execution grader</div>
+             <div class="vr">${esc(r.reason)}</div></div>
+      </div>
+    </div>
+    <div class="block"><div class="blabel">Agent’s answer</div>
+      <pre style="white-space:pre-wrap">${esc(r.answer)}</pre></div>
+    ${goldBlock}
+    <div class="block"><div class="blabel">Trajectory <span style="color:var(--dim);text-transform:none;letter-spacing:0">— what the agent actually did</span></div>
+      <div class="steps">${(r.steps||[]).map((s,n)=>`
+        <div class="step ${s.err?'err':''}">
+          <div class="sh"><span class="num">${n+1}</span><span class="nm">${esc(s.n)}</span>
+          ${s.graded?'<span class="graded">graded — last call</span>':''}</div>
+          <pre>${sqlHi(s.sql)}</pre>
+          ${s.err?`<div class="errmsg">✕ ${esc(s.err)}</div>`:`<div class="out">→ ${esc(s.out)}</div>`}
+        </div>`).join("")}</div></div>
+    ${cmp}
+    <div class="block"><div class="blabel">Cost of this attempt</div>
+      <pre>latency ${r.latency}s · tokens in ${r.tin.toLocaleString()} · out ${r.tout.toLocaleString()}</pre></div>`;
+
+  document.querySelectorAll(".rtab").forEach(t=>t.onclick=()=>{CURR=+t.dataset.j;drawRepeat();});
+}
+function side(title, cols, rows){
+  if(!rows) return "";
+  return `<div class="side"><h4>${title}</h4><table>
+    <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>
+    ${rows.map(r=>`<tr>${r.map(v=>`<td>${esc(v)}</td>`).join("")}</tr>`).join("")}
+  </table></div>`;
+}
+function close(){ $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); }
+$("#dclose").onclick = close; $("#scrim").onclick = close;
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") close(); });
+
+/* ── load a real run file ── */
+$("#loadfile").addEventListener("change", ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try{
+      const raw = JSON.parse(fr.result);
+      RUN = raw.cases ? raw : adapt(raw);
+      render(); close();
+    }catch(err){ alert("Could not parse that run file:\n"+err.message); }
+  };
+  fr.readAsText(f);
+});
+
+/* Adapt agenteval's reports/run_*.json into the shape this view needs. */
+function adapt(raw){
+  const byCase = {};
+  (raw.results||[]).forEach(r=>{
+    (byCase[r.case_id] ||= []).push(r);
+  });
+  const cases = Object.entries(byCase).map(([id,reps])=>{
+    reps.sort((a,b)=>a.repeat-b.repeat);
+    return {
+      id, tags: reps[0].tags||[], question: reps[0].question || id,
+      gold:null, gold_rows:null, gold_cols:null,
+      unanswerable: reps[0].scorer==="unanswerable",
+      results: reps.map(r=>({
+        pass:!!r.passed, skipped:!!r.skipped, reason:r.reason||"", answer:r.answer||"",
+        latency:r.latency_s||0, tin:r.tokens_in||0, tout:r.tokens_out||0,
+        cols:[], rows:null,
+        steps:(r.trajectory||[]).map((t,i,arr)=>({
+          n:t.name, sql:(t.arguments&&(t.arguments.sql||t.arguments.query))||JSON.stringify(t.arguments||{}),
+          out:(t.output||"").slice(0,400), err:t.error||null, graded:i===arr.length-1
+        }))
+      }))
+    };
+  });
+  return {run_id:raw.run_id, created_at:raw.created_at, adapter:raw.adapter,
+          dataset:raw.dataset, repeats:raw.repeats, cases, taxonomy:[], sample:false};
+}
+
+/* Drag a run file anywhere onto the page. */
+["dragover","drop"].forEach(t=>document.addEventListener(t,e=>e.preventDefault()));
+document.addEventListener("drop", e=>{
+  const f = e.dataTransfer.files[0]; if(!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { try{ const r=JSON.parse(fr.result); RUN = r.cases?r:adapt(r); render(); close(); }
+                      catch(err){ alert("Could not parse that run file:\n"+err.message); } };
+  fr.readAsText(f);
+});
+
+/* Served over HTTP (see dashboard/serve.py), the page loads its own data.
+   Over file:// this fetch is blocked, so the sample renders and the picker
+   stays as the way in. */
+render();
+fetch("../reports/latest.json")
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(v => { RUN = v.cases ? v : adapt(v); render(); })
+  .catch(() => {});
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from .adapter import AgentAdapter, AgentResult
+from .adapter import AgentAdapter, AgentResult, ToolCall
 from .cases import Case
 from .scorers import score_case
 
@@ -34,6 +34,10 @@ class RepeatResult(BaseModel):
     tool_calls: int = 0
     tool_errors: int = 0
     agent_error: str | None = None
+    # The steps the agent actually took. Counts alone ("3 tool calls") say a
+    # verdict happened but not why; the dashboard grades trajectories, and a
+    # failure is only debuggable if the SQL that produced it is in the record.
+    trajectory: list[ToolCall] = Field(default_factory=list)
     # TODO(S5): trace_url — link every failure to its exact trace.
 
 
@@ -80,6 +84,7 @@ def run_suite(adapter: AgentAdapter, cases: list[Case], dataset_name: str,
                 tool_calls=len(result.trajectory),
                 tool_errors=sum(1 for t in result.trajectory if t.error),
                 agent_error=result.error,
+                trajectory=result.trajectory,
             ))
     return run
 
