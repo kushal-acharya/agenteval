@@ -150,8 +150,76 @@ def build(run_path: Path, _cache: dict | None = None) -> dict:
         "run_id": raw.get("run_id", run_path.stem), "created_at": raw.get("created_at", ""),
         "adapter": raw.get("adapter", ""), "dataset": raw.get("dataset", ""),
         "repeats": raw.get("repeats", 1), "cases": cases,
-        "taxonomy": [], "sample": False,
+        "sample": False,
     }
+
+
+def _esc(s: str) -> str:
+    """The taxonomy renderer inserts `d` as raw HTML, and `d` carries model-written
+    SQL. Escape here so a query containing angle brackets cannot inject markup."""
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+#: (match on the scorer's reason, title, why it happens). Order matters — first hit wins.
+FAILURE_KINDS = [
+    ("column count", "Output-contract violation",
+     "The answer was right; the <em>shape</em> was not. The agent appended context "
+     "columns the question never asked for. Nothing to do with SQL ability — it is "
+     "instruction-following on output format, and it is the single largest failure "
+     "class for smaller models."),
+    ("no answer", "Right query, nothing said",
+     "The result set matched and the agent returned no prose at all. Execution "
+     "grading certifies the query; it must not also certify an answer that was "
+     "never given to the user."),
+    ("different rows", "Wrong values — a real error",
+     "The query ran and returned the wrong numbers. This is the class that matters: "
+     "the output is plausible, well-formatted, and wrong."),
+    ("row count", "Wrong grain",
+     "Right table, wrong unit of analysis — rows per crash where the question asked "
+     "per person, or a grouped result where one value was wanted."),
+    ("final query errored", "Broken SQL",
+     "The agent's last query failed against the database — a hallucinated column or "
+     "an invalid join. Visible and self-announcing, so the least dangerous class."),
+    ("never called", "Answered without querying",
+     "The agent produced a fluent answer having run no query at all. Fabrication in "
+     "its purest form."),
+    ("declining", "Fabrication under absence",
+     "Asked for data the database does not contain, the agent reported a finding "
+     "instead of declining. The failure that matters most in a liability-bearing "
+     "domain: a stated zero reads as evidence, not as absence."),
+]
+
+
+def taxonomy(view: dict) -> list[dict]:
+    """Group every failed attempt by why it failed, with a real example each.
+
+    The pass rate says something is wrong; this says what — and unlike the rate,
+    it survives a change of model, which is what makes it worth reporting.
+    """
+    buckets: dict[str, dict] = {}
+    for case in view["cases"]:
+        for i, r in enumerate(case["results"]):
+            if r["pass"] or r["skipped"]:
+                continue
+            why = r.get("reason", "")
+            title, expl = next(((t, e) for m, t, e in FAILURE_KINDS if m in why),
+                               ("Other", "Uncategorised failure."))
+            b = buckets.setdefault(title, {"n": 0, "t": title, "why": expl, "ex": None})
+            b["n"] += 1
+            if b["ex"] is None:
+                b["ex"] = {"case": case["id"], "repeat": i + 1, "reason": why,
+                           "gold": case.get("gold"), "sql": r.get("sql")}
+    out = []
+    for b in sorted(buckets.values(), key=lambda x: -x["n"]):
+        ex, d = b["ex"], b["why"]
+        if ex:
+            d += (f"<br><br><b>{_esc(ex['case'])} · repeat {ex['repeat']}</b> — "
+                  f"<code>{_esc(ex['reason'])}</code>")
+            if ex.get("gold") and ex.get("sql"):
+                d += (f"<br><br>gold: <code>{_esc(ex['gold'][:150])}</code>"
+                      f"<br>agent: <code>{_esc(ex['sql'][:150])}</code>")
+        out.append({"n": b["n"], "t": b["t"], "d": d})
+    return out
 
 
 def summarize(view: dict) -> dict:
@@ -185,6 +253,7 @@ def main() -> None:
         except Exception as e:                    # one bad file must not sink the rest
             print(f"  ! skipped {p.name}: {type(e).__name__}: {e}")
             continue
+        v["taxonomy"] = taxonomy(v)
         views.append(v)
         history.append(summarize(v))
 

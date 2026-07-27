@@ -115,6 +115,13 @@ def score_execution(case: Case, result: AgentResult, *, tool: str = SQL_TOOL) ->
                      reason="agent query exceeded the row cap (missing aggregate or LIMIT?)")
 
     ok, why = compare(gold_rows, got_rows, ordered=order_matters(str(case.expected)))
+    if ok and not result.answer.strip():
+        # Found in a real Haiku run: f-08 repeat 2 returned the correct result
+        # set and *no prose at all*, and scored a clean pass. Execution grading
+        # validates the query; it must not also certify an answer that was never
+        # given. Right query, nothing said, is not a pass.
+        return Score(passed=False, scorer="execution",
+                     reason="correct result set but the agent returned no answer")
     return Score(passed=ok, scorer="execution", reason="" if ok else why)
 
 

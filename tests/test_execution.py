@@ -146,6 +146,18 @@ def test_a_failed_final_query_reports_that_error_not_an_earlier_query(db):
     assert "column count" not in score.reason
 
 
+def test_right_result_set_but_no_answer_fails(db):
+    """Regression from a real Haiku run.
+
+    f-08 repeat 2 produced the correct result set and returned no prose at all,
+    and scored a clean pass — the agent told the user nothing. Execution grading
+    certifies the query, and must not silently certify a missing answer too.
+    """
+    gold = "SELECT COUNT(*) FROM accidents"
+    score = score_case(_case(db, gold), _ran("SELECT COUNT(*) FROM accidents", answer="  "))
+    assert not score.passed and "no answer" in score.reason
+
+
 def test_answering_without_querying_fails(db):
     """The fabrication trap, SQL edition — a fluent answer and no query."""
     score = score_case(_case(db, "SELECT COUNT(*) FROM accidents"),
