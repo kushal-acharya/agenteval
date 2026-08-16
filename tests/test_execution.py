@@ -174,6 +174,67 @@ def test_all_queries_errored_reports_the_last_error(db):
     assert not score.passed and "no such table" in score.reason
 
 
+# --- containment: gold's SHAPE is not part of the question ------------------
+#
+# The first real sweep failed 15 of 20 attempts on column count alone, while the
+# agents' answers were correct. Gold's arity is an artifact of how the reference
+# query was written; the question ("which month had the most fatal crashes?")
+# never asked for exactly one column. These pin that down.
+
+def test_extra_context_columns_pass(db):
+    """f-08/f-01: the agent showed its work. That is better, not wrong."""
+    gold = "SELECT statename FROM accidents GROUP BY statename ORDER BY COUNT(*) DESC LIMIT 1"
+    agent = ("SELECT statename, COUNT(*) AS n FROM accidents "
+             "GROUP BY statename ORDER BY n DESC LIMIT 1")
+    assert score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_extra_columns_do_not_rescue_a_wrong_value(db):
+    """Containment must not become 'any row mentioning anything'."""
+    gold = "SELECT statename FROM accidents GROUP BY statename ORDER BY COUNT(*) DESC LIMIT 1"
+    agent = "SELECT statename, COUNT(*) FROM accidents GROUP BY statename ORDER BY COUNT(*) ASC LIMIT 1"
+    assert not score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_fewer_columns_than_gold_still_fails(db):
+    """Containment is one-directional: gold ⊆ agent, never the reverse."""
+    gold = "SELECT statename, SUM(fatals) FROM accidents GROUP BY statename"
+    agent = "SELECT statename FROM accidents GROUP BY statename"
+    assert not score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_row_count_still_guards_grain(db):
+    """The check that survived containment — one row is not five."""
+    gold = "SELECT SUM(fatals) FROM accidents"
+    agent = "SELECT fatals FROM accidents"
+    score = score_case(_case(db, gold), _ran(agent))
+    assert not score.passed and "row count" in score.reason
+
+
+# --- numeric precision: gold declares how precise its claim is --------------
+
+def test_agent_may_skip_the_rounding_gold_applied(db):
+    """f-07: ROUND(x,1) -> 1.6 is a one-decimal claim; 1.6 vs 1.6000000001 is
+    the same answer, and an unrounded 1.6 is too."""
+    gold = "SELECT ROUND(AVG(fatals), 1) FROM accidents"
+    agent = "SELECT AVG(fatals) FROM accidents"          # 1.6 exactly here
+    assert score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_precision_matching_does_not_hide_a_wrong_number(db):
+    """The reason this is precision-matching and not a blanket epsilon."""
+    gold = "SELECT ROUND(AVG(fatals), 1) FROM accidents"   # 1.6
+    agent = "SELECT ROUND(AVG(fatals) + 1, 1) FROM accidents"
+    assert not score_case(_case(db, gold), _ran(agent)).passed
+
+
+def test_units_error_is_not_a_precision_error(db):
+    """0.502 vs 50.2 must stay a failure — that is a units bug in the answer."""
+    gold = "SELECT ROUND(AVG(fatals) / 10.0, 3) FROM accidents"
+    agent = "SELECT ROUND(AVG(fatals) * 10.0, 3) FROM accidents"
+    assert not score_case(_case(db, gold), _ran(agent)).passed
+
+
 # --- harness/dataset problems must not distort the pass rate ----------------
 
 def test_broken_gold_sql_is_skipped_not_failed(db):

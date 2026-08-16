@@ -80,30 +80,85 @@ def order_matters(gold_sql: str) -> bool:
     return bool(_ORDER_BY_RE.search(gold_sql))
 
 
-def _cells_equal(a, b) -> bool:
-    if isinstance(a, float) or isinstance(b, float):
+def _decimals(value) -> int | None:
+    """How many decimal places the gold value *states*. None if it isn't a
+    finite decimal literal (integers, NaN, exponent notation)."""
+    try:
+        text = repr(float(value))
+    except (TypeError, ValueError):
+        return None
+    if "e" in text or "n" in text or "." not in text:  # 1e-05, nan, inf
+        return None
+    return len(text.split(".")[1])
+
+
+def _cells_equal(gold, got) -> bool:
+    """Compare one cell. **Directional — `gold` first.**
+
+    Gold declares its own precision: `ROUND(AVG(age), 1)` returning 44.4 is a
+    one-decimal claim, so an agent that computes 44.4357 and doesn't round has
+    the same answer, not a different one. We therefore compare at gold's stated
+    precision rather than loosening tolerance globally — a blanket epsilon
+    would also swallow genuinely wrong numbers, which is the failure class the
+    whole harness exists to catch. 44.4357 passes against 44.4; 41.2 does not.
+
+    Argument order matters: _cells_equal(got, gold) is a different question.
+    """
+    if isinstance(gold, float) or isinstance(got, float):
         try:
-            return math.isclose(float(a), float(b), rel_tol=1e-6, abs_tol=1e-9)
+            g, r = float(gold), float(got)
         except (TypeError, ValueError):
             return False
-    return a == b
+        if math.isclose(g, r, rel_tol=1e-6, abs_tol=1e-9):
+            return True
+        places = _decimals(gold)
+        return places is not None and round(r, places) == g
+    return gold == got
 
 
-def _rows_equal(a: tuple, b: tuple) -> bool:
-    return len(a) == len(b) and all(_cells_equal(x, y) for x, y in zip(a, b))
+def _rows_equal(gold_row: tuple, got_row: tuple) -> bool:
+    """Strict, same-shape equality. Kept for callers that want exactness;
+    `compare` uses containment instead — see _row_contains."""
+    return (len(gold_row) == len(got_row)
+            and all(_cells_equal(g, r) for g, r in zip(gold_row, got_row)))
 
 
-def _multiset_equal(gold: list[tuple], got: list[tuple]) -> bool:
-    """Order-insensitive comparison that still honours float tolerance.
+def _row_contains(gold_row: tuple, got_row: tuple) -> bool:
+    """Every gold value appears somewhere in the agent's row.
 
-    Greedy match rather than sort-then-zip: sorting would key on exact values,
-    so two rows equal *within tolerance* could sort into different positions
-    and compare unequal. O(n^2), bounded by MAX_ROWS.
+    Why containment and not equality: gold's *shape* is an artifact of how the
+    reference query happened to be written, not part of the question. Asked
+    "which month had the most fatal crashes?", an agent that returns
+    ('October', 3489) has answered better than one returning ('October',) —
+    it showed its work. Failing it teaches the agent to withhold context.
+
+    Greedy match, mirroring _multiset_rows: matching by value rather than by
+    position means an agent may also order its columns differently.
+    """
+    if len(got_row) < len(gold_row):
+        return False
+    remaining = list(got_row)
+    for g in gold_row:
+        for i, cell in enumerate(remaining):
+            if _cells_equal(g, cell):
+                del remaining[i]
+                break
+        else:
+            return False
+    return True
+
+
+def _multiset_rows(gold: list[tuple], got: list[tuple]) -> bool:
+    """Order-insensitive row matching, using containment per row.
+
+    Greedy rather than sort-then-zip: sorting would key on exact values, so two
+    rows equal *within tolerance* could sort into different positions and
+    compare unequal. O(n^2), bounded by MAX_ROWS.
     """
     remaining = list(got)
     for g in gold:
         for i, r in enumerate(remaining):
-            if _rows_equal(g, r):
+            if _row_contains(g, r):
                 del remaining[i]
                 break
         else:
@@ -114,23 +169,34 @@ def _multiset_equal(gold: list[tuple], got: list[tuple]) -> bool:
 def compare(gold: list[tuple], got: list[tuple], *, ordered: bool) -> tuple[bool, str]:
     """Compare two result sets. Returns (equal, diagnostic-if-not).
 
-    Column *names* are ignored — an agent may alias differently and still be
-    right. Column *count* and values are not.
+    The rule is **containment, not equality**: every gold value must appear in
+    the agent's corresponding row, but extra columns are not an error. Column
+    names are ignored too — an agent may alias differently and still be right.
+
+    Row *count* is still exact, and that is what keeps "wrong grain" a failure:
+    one row where five were asked for, or per-crash rows where the question was
+    per-person, still fails loudly.
+
+    Known limitation: containment can pass a row that crams several candidate
+    values together — gold ('Texas',) is satisfied by ('California', 3877,
+    'Texas'). Exact row counts bound the damage, and the alternative measured
+    75% of correct answers as failures, so this is the better trade — but it is
+    a real hole, not an oversight.
     """
     if len(gold) != len(got):
         return False, f"row count: expected {len(gold)}, got {len(got)}"
-    if gold and got and len(gold[0]) != len(got[0]):
-        return False, f"column count: expected {len(gold[0])}, got {len(got[0])}"
 
     if ordered:
         for i, (g, r) in enumerate(zip(gold, got)):
-            if not _rows_equal(g, r):
-                return False, f"row {i} differs (gold has ORDER BY): expected {g}, got {r}"
+            if not _row_contains(g, r):
+                return False, (f"row {i} (gold has ORDER BY): expected values "
+                               f"{g} not found in {r}")
         return True, ""
 
-    if not _multiset_equal(gold, got):
-        missing = [g for g in gold if not any(_rows_equal(g, r) for r in got)]
-        return False, f"same row count, different rows; first missing: {missing[0] if missing else '?'}"
+    if not _multiset_rows(gold, got):
+        missing = [g for g in gold if not any(_row_contains(g, r) for r in got)]
+        return False, (f"same row count, different rows; no agent row contains "
+                       f"{missing[0] if missing else '?'}")
     return True, ""
 
 
