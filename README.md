@@ -69,6 +69,34 @@ The harness core depends on nothing but `pydantic`; the vendor SDK is an optiona
 extra used only by that example. Model independence is the point of the adapter
 interface, so `pip install agenteval` must not drag in an SDK.
 
+## Re-grading a saved run
+
+```bash
+agenteval rescore reports/run_<id>.json
+```
+
+A run file holds two different kinds of thing: **observations** (what the agent did —
+answer, trajectory, tokens, latency) and **judgments** (passed / reason). Observations are
+empirical and permanent. Judgments are derived, and go stale the moment you change a
+scorer. `rescore` keeps the observations, re-derives the judgments, and writes a *new*
+run file — the original is never touched, because the old verdicts are the "before" half
+of any honest write-up.
+
+It costs nothing and calls no model, but the real reason it exists is that **it isolates one
+variable**: to know whether a grading change helped, the trajectories have to be held fixed.
+A fresh sweep changes the grader *and* resamples the model, and then the movement is
+unattributable. It also turns every saved run into a regression fixture for the scorer
+itself — change `execution.py`, rescore the corpus, and see whether any verdict flipped
+that you didn't intend.
+
+It refuses to invent verdicts it can't derive. A run recorded before trajectories were
+persisted has `tool_calls: 3` and an empty trajectory: the agent *did* query, the harness
+simply failed to write it down. That is skipped loudly, never scored as a failure — while
+zero tool calls with no trajectory is not data loss but the fabrication trap firing, and
+still fails. It cannot re-measure latency or tokens (those belong to the original call and
+are carried through unchanged), cannot tell you what a model does *today*, and — since
+execution grading re-executes SQL — is only reproducible against a fixed database.
+
 ## Seeing a run
 
 The text report gives you the numbers. The dashboard shows you *why* you got them:
@@ -126,6 +154,8 @@ LLM-as-judge), `unanswerable` (the agent must decline, not fabricate).
 - [x] **S2** — execution-based SQL grading: runs the agent's **trajectory** SQL
       against a read-only DB and compares result sets
 - [ ] **S3** — LLM-as-judge + calibration vs ~30 hand-labeled cases (report agreement)
+- [x] **S3.5** — `agenteval rescore`: re-derive verdicts from saved trajectories, no model
+      calls. Pulled forward from S4 because a scorer fix left every saved run stale
 - [ ] **S4** — `agenteval diff`: newly-failing / newly-fixed / flaky / cost delta
 - [ ] **S5** — OTel tracing → self-hosted Phoenix; failure→trace links; CI regression gate
 

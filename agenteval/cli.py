@@ -14,6 +14,7 @@ import sys
 
 from .cases import load_dataset
 from .report import render, render_history
+from .rescore import render_flips, rescore_run
 from .runner import load_run, run_suite, save_run
 
 
@@ -51,6 +52,13 @@ def main(argv: list[str] | None = None) -> int:
     p_hist.add_argument("--dir", default="reports")
     p_hist.add_argument("--dataset", help="only runs of this dataset")
 
+    p_res = sub.add_parser(
+        "rescore",
+        help="re-grade a saved run with the current scorer (no model calls)")
+    p_res.add_argument("run_file")
+    p_res.add_argument("--dataset", help="override the dataset recorded in the run")
+    p_res.add_argument("--out", default="reports")
+
     sub.add_parser("diff", help="regression diff between two runs (lands in S4)")
 
     args = parser.parse_args(argv)
@@ -70,6 +78,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "history":
         print(render_history(args.dir, dataset=args.dataset))
+        return 0
+
+    if args.command == "rescore":
+        old = load_run(args.run_file)
+        dataset = args.dataset or old.dataset
+        cases = load_dataset(dataset)
+        new, flips = rescore_run(old, cases, dataset_path=dataset)
+        path = save_run(new, args.out)
+        # The diff comes first and the report second, deliberately: the useful
+        # output of a rescore is which verdicts moved, not the headline rate.
+        print(render_flips(new, flips))
+        print()
+        print(render(new))
+        print(f"\n  saved: {path}   (original {args.run_file} untouched)")
         return 0
 
     if args.command == "diff":

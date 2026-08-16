@@ -48,6 +48,14 @@ class RunRecord(BaseModel):
     dataset: str
     repeats: int
     results: list[RepeatResult] = Field(default_factory=list)
+    # Set only on rescored runs (see rescore.py). A rescore keeps the original
+    # observations and re-derives the verdicts, so a reader has to be able to
+    # tell "the model did this" from "the current scorer thinks this" — and
+    # `dataset_sha` makes it visible if the golden set moved underneath.
+    # Optional with defaults so run files written before this stay loadable.
+    rescored_from: str | None = None
+    rescored_at: str | None = None
+    dataset_sha: str | None = None
 
 
 def run_suite(adapter: AgentAdapter, cases: list[Case], dataset_name: str,
